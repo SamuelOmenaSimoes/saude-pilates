@@ -1,0 +1,20 @@
+# dependências
+node_modules
+.pnpm-store
+
+# builds
+dist
+client/dist
+server/dist
+
+# ambiente
+.env
+.env.*
+
+# logs
+logs
+*.log
+
+# sistema
+.DS_Store
+Thumbs.db

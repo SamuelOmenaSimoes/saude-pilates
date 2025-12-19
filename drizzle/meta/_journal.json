@@ -1,0 +1,55 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1764522039329,
+      "tag": "0000_slim_lady_vermin",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1764522130456,
+      "tag": "0001_careful_kronos",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1764678415116,
+      "tag": "0002_icy_tony_stark",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1764693715617,
+      "tag": "0003_flimsy_tyger_tiger",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1764774678629,
+      "tag": "0004_tranquil_blonde_phantom",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1764775828687,
+      "tag": "0005_grey_firelord",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1764776520940,
+      "tag": "0006_solid_lester",
+      "breakpoints": true
+    }
+  ]
+}
