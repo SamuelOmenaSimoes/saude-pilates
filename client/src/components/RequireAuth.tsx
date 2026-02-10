@@ -18,9 +18,9 @@ export function RequireAuth({ children, requireAdmin }: RequireAuthProps) {
     return <Redirect to="/login" />;
   }
 
-  if (requireAdmin && !me.isAdmin) {
-    return <Redirect to="/dashboard" />;
-  }
+  if (requireAdmin && me.role !== "admin") {
+  return <Redirect to="/dashboard" />;
+}
 
   return <>{children}</>;
 }

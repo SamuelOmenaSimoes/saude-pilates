@@ -1,0 +1,85 @@
+export type PlanConfig = {
+  name: string;
+  priceId: string;
+  credits: number;
+  interval: "month" | "one_time";
+  commitmentMonths?: number;
+};
+
+export const PLANS = {
+  once_per_week: {
+    monthly: {
+      name: "1x por semana – Mensal",
+      priceId: "prod_TcHYs7sqK0TmqR",
+      credits: 4,
+      interval: "month",
+    },
+    quarterly: {
+      name: "1x por semana – Trimestral",
+      priceId: "prod_TcHfMGmo2uz9z2",
+      credits: 12,
+      interval: "month",
+      commitmentMonths: 3,
+    },
+    semiannual: {
+      name: "1x por semana – Semestral",
+      priceId: "prod_TcHfd0AE61TaIH",
+      credits: 24,
+      interval: "month",
+      commitmentMonths: 6,
+    },
+  },
+
+  twice_per_week: {
+    monthly: {
+      name: "2x por semana – Mensal",
+      priceId: "prod_TcHgxsP1jQeOAX",
+      credits: 8,
+      interval: "month",
+    },
+    quarterly: {
+      name: "2x por semana – Trimestral",
+      priceId: "price_2X_TRIMESTRAL",
+      credits: 24,
+      interval: "month",
+      commitmentMonths: 3,
+    },
+    semiannual: {
+      name: "2x por semana – Semestral",
+      priceId: "price_2X_SEMESTRAL",
+      credits: 48,
+      interval: "month",
+      commitmentMonths: 6,
+    },
+  },
+
+  three_per_week: {
+    monthly: {
+      name: "3x por semana – Mensal",
+      priceId: "price_3X_MENSAL",
+      credits: 12,
+      interval: "month",
+    },
+    quarterly: {
+      name: "3x por semana – Trimestral",
+      priceId: "price_3X_TRIMESTRAL",
+      credits: 36,
+      interval: "month",
+      commitmentMonths: 3,
+    },
+    semiannual: {
+      name: "3x por semana – Semestral",
+      priceId: "price_3X_SEMESTRAL",
+      credits: 72,
+      interval: "month",
+      commitmentMonths: 6,
+    },
+  },
+
+  single_class: {
+    name: "Aula avulsa",
+    priceId: "price_AVULSA",
+    credits: 1,
+    interval: "one_time",
+  },
+} as const;

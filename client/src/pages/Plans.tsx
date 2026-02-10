@@ -10,29 +10,39 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 export default function Plans() {
+  const checkout = trpc.stripe.createCheckoutSession.useMutation();
+  const checkoutOneTime = trpc.stripe.createOneTimeCheckout.useMutation();
   const { data: plans, isLoading } = trpc.plans.list.useQuery();
   const { isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
-  const createCheckoutMutation = trpc.stripe.createPlanCheckout.useMutation();
 
-  const handleSelectPlan = async (planId: number) => {
-    if (!isAuthenticated) {
-      toast.info("Faça login para adquirir um plano");
-      setLocation('/login');
-      return;
-    }
+  const handleSelectPlan = async (plan: any) => {
+  if (!isAuthenticated) {
+    toast.info("Faça login para adquirir um plano");
+    setLocation("/login");
+    return;
+  }
 
-    try {
-      toast.loading("Redirecionando para pagamento...");
-      const { url } = await createCheckoutMutation.mutateAsync({ planId });
-      if (url) {
-        window.open(url, "_blank");
-        toast.success("Redirecionado para o checkout!");
-      }
-    } catch (error) {
-      toast.error("Erro ao criar checkout");
+  try {
+    toast.loading("Redirecionando para pagamento...");
+
+    const mutation =
+      plan.type === "single"
+        ? checkoutOneTime
+        : checkout;
+
+    const { url } = await mutation.mutateAsync({
+      priceId: plan.priceId,
+    });
+
+    if (url) {
+      window.location.href = url;
     }
-  };
+  } catch {
+    toast.error("Erro ao criar checkout");
+  }
+};
+
 
   const groupedPlans = plans?.reduce((acc, plan) => {
     if (!acc[plan.frequency]) {
@@ -159,8 +169,8 @@ export default function Plans() {
                         <Button
                           className="w-full"
                           variant={isPopular ? "default" : "outline"}
-                          onClick={() => handleSelectPlan(plan.id)}
-                          disabled={createCheckoutMutation.isPending}
+                          onClick={() => handleSelectPlan(plan)}
+                          disabled={checkout.isPending || checkoutOneTime.isPending}
                         >
                           Assinar Plano
                         </Button>
