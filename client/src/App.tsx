@@ -17,6 +17,7 @@ import MyAppointments from "./pages/MyAppointments";
 import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
 import MyPlan from "./pages/MyPlan";
+import Success from "./pages/Success";
 
 import CompleteProfile from "./pages/CompleteProfile";
 import Login from "./pages/Login";
@@ -36,6 +37,7 @@ function Router() {
       <Route path={"/register"} component={Register} />
       <Route path={"/forgot-password"} component={ForgotPassword} />
       <Route path={"/reset-password/:token"} component={ResetPassword} />
+      <Route path={"/success"} component={Success} />
       
   <Route
   path="/trial-class"
