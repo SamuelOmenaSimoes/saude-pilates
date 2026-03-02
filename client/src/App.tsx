@@ -18,7 +18,6 @@ import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
 import MyPlan from "./pages/MyPlan";
 import Success from "./pages/Success";
-
 import CompleteProfile from "./pages/CompleteProfile";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -26,118 +25,60 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 
 function Router() {
-  // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/about"} component={About} />
-      <Route path={"/plans"} component={Plans} />
-      <Route path={"/contact"} component={Contact} />
-      <Route path={"/login"} component={Login} />
-      <Route path={"/register"} component={Register} />
-      <Route path={"/forgot-password"} component={ForgotPassword} />
-      <Route path={"/reset-password/:token"} component={ResetPassword} />
-      <Route path={"/success"} component={Success} />
+      {/* Rotas Públicas */}
+      <Route path="/" component={Home} />
+      <Route path="/about" component={About} />
+      <Route path="/plans" component={Plans} />
+      <Route path="/contact" component={Contact} />
+      <Route path="/login" component={Login} />
+      <Route path="/register" component={Register} />
+      <Route path="/forgot-password" component={ForgotPassword} />
+      <Route path="/reset-password/:token" component={ResetPassword} />
+      <Route path="/success" component={Success} />
       
-  <Route
-  path="/trial-class"
-  component={() => (
-    <RequireAuth>
-      <TrialClass />
-    </RequireAuth>
-  )}
-/>
+      {/* Rotas Protegidas (Requer Login) */}
+      <Route path="/trial-class">
+        <RequireAuth><TrialClass /></RequireAuth>
+      </Route>
+      <Route path="/single-class">
+        <RequireAuth><SingleClass /></RequireAuth>
+      </Route>
+      <Route path="/book-class">
+        <RequireAuth><BookClass /></RequireAuth>
+      </Route>
+      <Route path="/dashboard">
+        <RequireAuth><Dashboard /></RequireAuth>
+      </Route>
+      <Route path="/my-appointments">
+        <RequireAuth><MyAppointments /></RequireAuth>
+      </Route>
+      <Route path="/my-plan">
+        <RequireAuth><MyPlan /></RequireAuth>
+      </Route>
+      <Route path="/profile">
+        <RequireAuth><Profile /></RequireAuth>
+      </Route>
+      <Route path="/complete-profile">
+        <RequireAuth><CompleteProfile /></RequireAuth>
+      </Route>
 
-<Route
-  path="/single-class"
-  component={() => (
-    <RequireAuth>
-      <SingleClass />
-    </RequireAuth>
-  )}
-/>
+      {/* Rota de Admin (Requer ser Administrador) */}
+      <Route path="/admin">
+        <RequireAuth requireAdmin><Admin /></RequireAuth>
+      </Route>
 
-<Route
-  path="/book-class"
-  component={() => (
-    <RequireAuth>
-      <BookClass />
-    </RequireAuth>
-  )}
-/>
-
-<Route
-  path="/dashboard"
-  component={() => (
-    <RequireAuth>
-      <Dashboard />
-    </RequireAuth>
-  )}
-/>
-
-<Route
-  path="/my-appointments"
-  component={() => (
-    <RequireAuth>
-      <MyAppointments />
-    </RequireAuth>
-  )}
-/>
-
-<Route
-  path="/my-plan"
-  component={() => (
-    <RequireAuth>
-      <MyPlan />
-    </RequireAuth>
-  )}
-/>
-
-<Route
-  path="/profile"
-  component={() => (
-    <RequireAuth>
-      <Profile />
-    </RequireAuth>
-  )}
-/>
-
-<Route
-  path="/complete-profile"
-  component={() => (
-    <RequireAuth>
-      <CompleteProfile />
-    </RequireAuth>
-  )}
-/>
-
-      <Route
-  path="/admin"
-  component={() => (
-    <RequireAuth requireAdmin>
-      <Admin />
-    </RequireAuth>
-  )}
-/>
-
-      <Route path={"/404"} component={NotFound} />
+      {/* Página 404 */}
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-// NOTE: About Theme
-// - First choose a default theme according to your design style (dark or light bg), than change color palette in index.css
-//   to keep consistent foreground/background color across components
-// - If you want to make theme switchable, pass `switchable` ThemeProvider and use `useTheme` hook
-
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider
-        defaultTheme="light"
-        // switchable
-      >
+      <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
           <Router />

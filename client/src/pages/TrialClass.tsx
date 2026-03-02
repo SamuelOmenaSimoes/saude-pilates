@@ -42,12 +42,12 @@ export default function TrialClass() {
 
   const { data: rooms } = trpc.units.getRooms.useQuery(
     { unitId: selectedUnit! },
-    { enabled: !!selectedUnit }
+    { enabled: !!selectedUnit },
   );
 
   const { data: professionals } = trpc.professionals.getByRoom.useQuery(
     { roomId: selectedRoom! },
-    { enabled: !!selectedRoom }
+    { enabled: !!selectedRoom },
   );
 
   const professional = professionals?.[0];
@@ -60,13 +60,16 @@ export default function TrialClass() {
       setAvailableSlots(undefined);
       return;
     }
-
-    const timestamp = selectedDate.getTime();
     setSlotsLoading(true);
     setSlotsError(undefined);
 
     trpcUtils.client.appointments.getAvailableSlots
-      .query({ roomId: selectedRoom, date: timestamp })
+      .query({
+        roomId: selectedRoom,
+        date: selectedDate || new Date(),
+        unitId: selectedUnit!,
+        professionalId: professional?.id,
+      })
       .then((slots) => {
         setAvailableSlots(slots);
         setSlotsLoading(false);
@@ -83,11 +86,12 @@ export default function TrialClass() {
   const createTrialMutation = trpc.appointments.createTrial.useMutation({
     onSuccess: async () => {
       if (selectedRoom && selectedDate) {
-        const timestamp = selectedDate.getTime();
         const slots =
           await trpcUtils.client.appointments.getAvailableSlots.query({
             roomId: selectedRoom,
-            date: timestamp,
+            date: selectedDate || new Date(),
+            unitId: selectedUnit!,
+            professionalId: professional?.id,
           });
         setAvailableSlots(slots);
       }
@@ -160,12 +164,8 @@ export default function TrialClass() {
       <WhatsAppButton />
 
       <section className="bg-gradient-soft py-12 text-center">
-        <h1 className="text-4xl font-bold mb-4">
-          Aula Experimental Gratuita
-        </h1>
-        <p className="text-muted-foreground">
-          Limitado a 1 aula por CPF
-        </p>
+        <h1 className="text-4xl font-bold mb-4">Aula Experimental Gratuita</h1>
+        <p className="text-muted-foreground">Limitado a 1 aula por CPF</p>
       </section>
 
       <section className="py-12 flex-1">
@@ -260,9 +260,7 @@ export default function TrialClass() {
               {slotsError && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Erro ao carregar horários
-                  </AlertDescription>
+                  <AlertDescription>Erro ao carregar horários</AlertDescription>
                 </Alert>
               )}
 
