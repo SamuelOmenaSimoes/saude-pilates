@@ -9,28 +9,43 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 export async function handleStripeWebhook(req: Request, res: Response) {
   const sig = req.headers["stripe-signature"];
 
-  if (!sig) {
-    console.error("[Stripe Webhook] Missing signature");
-    return res.status(400).send("Missing signature");
-  }
-
   let event: Stripe.Event;
 
-  try {
-    event = stripe.webhooks.constructEvent(
-      req.body,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET!
+  // In development, allow Postman (or any client) to skip signature verification
+  if (process.env.NODE_ENV === "development") {
+    const raw = Buffer.isBuffer(req.body)
+      ? req.body.toString("utf8")
+      : (req.body as string);
+    event = JSON.parse(raw) as Stripe.Event;
+    console.log(
+      "[Stripe Webhook] Postman/dev bypass: skipping signature verification",
     );
-  } catch (err: any) {
-    console.error("[Stripe Webhook] Signature verification failed:", err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+  } else {
+    if (!sig) {
+      console.error("[Stripe Webhook] Missing signature");
+      return res.status(400).send("Missing signature");
+    }
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        process.env.STRIPE_WEBHOOK_SECRET!,
+      );
+    } catch (err: any) {
+      console.error(
+        "[Stripe Webhook] Signature verification failed:",
+        err.message,
+      );
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
   }
 
   // Handle test events
-  if (event.id.startsWith('evt_test_')) {
-    console.log("[Webhook] Test event detected, returning verification response");
-    return res.json({ 
+  if (event.id.startsWith("evt_test_")) {
+    console.log(
+      "[Webhook] Test event detected, returning verification response",
+    );
+    return res.json({
       verified: true,
     });
   }
@@ -54,9 +69,11 @@ export async function handleStripeWebhook(req: Request, res: Response) {
       case "payment_intent.payment_failed": {
         const paymentIntent = event.data.object as Stripe.PaymentIntent;
         console.log(`[Stripe Webhook] Payment failed: ${paymentIntent.id}`);
-        
+
         // Update purchase status to failed if exists
-        const purchase = await db.getPurchaseByStripeSessionId(paymentIntent.id);
+        const purchase = await db.getPurchaseByStripeSessionId(
+          paymentIntent.id,
+        );
         if (purchase) {
           await db.updatePurchaseStatus(purchase.id, "failed");
         }
@@ -94,9 +111,14 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   if (!purchase) {
     console.log("[Stripe Webhook] Creating new purchase record");
-    
-    const credits = purchaseType === "single" ? 1 : (session.metadata?.credits ? parseInt(session.metadata.credits) : 0);
-    
+
+    const credits =
+      purchaseType === "single"
+        ? 1
+        : session.metadata?.credits
+          ? parseInt(session.metadata.credits)
+          : 0;
+
     await db.createPurchase({
       userId: userIdNum,
       type: purchaseType === "single" ? "single" : "plan",
@@ -114,39 +136,48 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     await db.updatePurchaseStatus(
       purchase.id,
       "completed",
-      session.payment_intent as string
+      session.payment_intent as string,
     );
   }
-
   if (!purchase) {
     console.error("[Stripe Webhook] Failed to create/retrieve purchase");
     return;
   }
 
+  purchase = await db.getPurchaseById(purchase.id);
+  if (!purchase) {
+    console.error("[Stripe Webhook] Failed to create/retrieve purchase");
+    return;
+  }
   // Add credits to user if not already added
   if (purchase.status === "completed" && purchase.creditsAdded > 0) {
     const user = await db.getUserById(userIdNum);
-    
+
     if (user) {
       // Check if credits were already added by looking at transaction history
       const transactions = await db.getCreditTransactionsByUserId(userIdNum);
-      const alreadyAdded = transactions.some(t => t.purchaseId === purchase.id);
-      
+      const alreadyAdded = transactions.some(
+        (t) => t.purchaseId === purchase.id,
+      );
+
       if (!alreadyAdded) {
-        console.log(`[Stripe Webhook] Adding ${purchase.creditsAdded} credits to user ${userIdNum}`);
-        
-        const description = purchaseType === "single" 
-          ? "Compra de aula avulsa" 
-          : `Compra de plano - ${purchase.creditsAdded} aulas`;
-        
+        console.log(
+          `[Stripe Webhook] Adding ${purchase.creditsAdded} credits to user ${userIdNum}`,
+        );
+
+        const description =
+          purchaseType === "single"
+            ? "Compra de aula avulsa"
+            : `Compra de plano - ${purchase.creditsAdded} aulas`;
+
         await db.addCreditsToUser(
           userIdNum,
           purchase.creditsAdded,
           purchaseType === "single" ? "single_purchase" : "plan_purchase",
           description,
-          purchase.id
+          purchase.id,
         );
-        
+
         console.log("[Stripe Webhook] Credits added successfully");
       } else {
         console.log("[Stripe Webhook] Credits already added for this purchase");
