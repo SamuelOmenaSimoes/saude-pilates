@@ -60,7 +60,7 @@ export const PLAN_PRODUCTS: Record<string, StripeProduct> = {
       installments: "6",
     },
   },
-  
+
   // 2x per week
   "2x-monthly": {
     name: "Plano Mensal - 2x por semana",
@@ -97,7 +97,7 @@ export const PLAN_PRODUCTS: Record<string, StripeProduct> = {
       installments: "6",
     },
   },
-  
+
   // 3x per week
   "3x-monthly": {
     name: "Plano Mensal - 3x por semana",
@@ -151,7 +151,7 @@ export function getProductByPlanId(planId: number): StripeProduct | undefined {
     8: "3x-quarterly",
     9: "3x-semester",
   };
-  
+
   const productKey = planMapping[planId];
   return productKey ? PLAN_PRODUCTS[productKey] : undefined;
 }
