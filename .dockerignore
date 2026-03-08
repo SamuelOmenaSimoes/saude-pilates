@@ -11,7 +11,15 @@ dist
 .cursor
 .vscode
 *.md
-!README.md
+.cursorignore
+
+# Deploy / host (not needed inside image)
+.github
+deploy.sh
+Dockerfile
+docker-compose.yml
+.dockerignore
+.nvmrc
 
 # Env (inject at runtime on server, do not bake into image)
 .env
@@ -27,7 +35,12 @@ coverage
 *.spec.tsx
 __tests__
 vitest.config.*
-.cursorignore
+*.map
+
+# Vite/IDE caches (rebuilt in container)
+client/.vite
+.vite
+*.tsbuildinfo
 
 # Misc
 .DS_Store
