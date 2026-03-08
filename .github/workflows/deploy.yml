@@ -1,7 +1,5 @@
 # Deploy to DigitalOcean when code is pushed/merged to main.
-# Required secrets: DEPLOY_HOST, DEPLOY_USER, and one of:
-#   DEPLOY_SSH_KEY = raw private key, or
-#   DEPLOY_SSH_KEY_BASE64 = base64-encoded private key (avoids "no key found" if pasting breaks newlines)
+# Required secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_PASSWORD (SSH login password)
 name: Deploy to production
 
 on:
@@ -12,22 +10,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare SSH key
-        run: |
-          if [ -n "${{ secrets.DEPLOY_SSH_KEY_BASE64 }}" ]; then
-            echo "${{ secrets.DEPLOY_SSH_KEY_BASE64 }}" | base64 -d > "$GITHUB_WORKSPACE/deploy_key"
-          else
-            printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > "$GITHUB_WORKSPACE/deploy_key"
-          fi
-          # 644 so the SSH action (runs in container as different user) can read the key
-          chmod 644 "$GITHUB_WORKSPACE/deploy_key"
-
       - name: Deploy to server via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
-          key_path: ${{ github.workspace }}/deploy_key
+          password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
           # port: 22   # uncomment and set if your SSH port is not 22
           script: |
             cd /var/www/saude-pilates-folder/saude-pilates
