@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SlotTimeSelect } from "@/components/SlotTimeSelect";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
 import { trpc } from "@/lib/trpc";
@@ -50,7 +51,7 @@ export default function TrialClass() {
     { enabled: !!selectedRoom },
   );
 
-  const professional = professionals?.[0];
+  const professional = professionals?.[0] ?? { id: 0, fullName: "" };
 
   // ===============================
   // Carregar horários disponíveis
@@ -68,7 +69,7 @@ export default function TrialClass() {
         roomId: selectedRoom,
         date: selectedDate || new Date(),
         unitId: selectedUnit!,
-        professionalId: professional?.id,
+        professionalId: professional.id,
       })
       .then((slots) => {
         setAvailableSlots(slots);
@@ -91,7 +92,7 @@ export default function TrialClass() {
             roomId: selectedRoom,
             date: selectedDate || new Date(),
             unitId: selectedUnit!,
-            professionalId: professional?.id,
+            professionalId: professional.id,
           });
         setAvailableSlots(slots);
       }
@@ -265,25 +266,15 @@ export default function TrialClass() {
               )}
 
               {/* Horários */}
-              {selectedDate && availableSlots && (
-                <div>
-                  <Label>Horário</Label>
-                  <Select onValueChange={setSelectedTime}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o horário" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableSlots
-                        .filter((s) => s.available)
-                        .map((s) => (
-                          <SelectItem key={s.time} value={s.time}>
-                            {s.time} ({s.count}/{s.capacity})
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+              {selectedDate &&
+                availableSlots &&
+                availableSlots.length > 0 && (
+                  <SlotTimeSelect
+                    slots={availableSlots}
+                    value={selectedTime}
+                    onValueChange={setSelectedTime}
+                  />
+                )}
 
               <Button
                 className="w-full"

@@ -58,13 +58,6 @@ export default function Plans() {
     "3x": "3x por semana",
   };
 
-  const formatPrice = (cents: number) => {
-    return (cents / 100).toLocaleString("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    });
-  };
-
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col">

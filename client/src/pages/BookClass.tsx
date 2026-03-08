@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SlotTimeSelect } from "@/components/SlotTimeSelect";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import WhatsAppButton from "@/components/WhatsAppButton";
@@ -39,15 +40,6 @@ export default function BookClass() {
     { roomId: selectedRoom! },
     { enabled: !!selectedRoom },
   );
-  const { data: availableSlots } = trpc.appointments.getAvailableSlots.useQuery(
-    {
-      roomId: selectedRoom!,
-      date: selectedDate || new Date(),
-      unitId: selectedUnit!,
-      professionalId: professional?.id,
-    },
-    { enabled: !!selectedRoom && !!selectedDate },
-  );
 
   const utils = trpc.useUtils();
   const createAppointmentMutation =
@@ -60,7 +52,18 @@ export default function BookClass() {
       },
     });
 
-  const professional = professionals?.[0];
+  const professional = professionals?.[0] ?? { id: 0, fullName: "" };
+
+  const { data: availableSlots } = trpc.appointments.getAvailableSlots.useQuery(
+    {
+      roomId: selectedRoom!,
+      date: selectedDate || new Date(),
+      unitId: selectedUnit!,
+      professionalId: professional.id,
+    },
+    { enabled: !!selectedRoom && !!selectedDate },
+  );
+
   const creditsBalance = user?.creditsBalance || 0;
 
   const isDateDisabled = (date: Date) => {
@@ -257,24 +260,11 @@ export default function BookClass() {
                 {selectedDate &&
                   availableSlots &&
                   availableSlots.length > 0 && (
-                    <div className="space-y-2">
-                      <Label>Horário</Label>
-                      <Select onValueChange={setSelectedTime}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione o horário" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableSlots
-                            .filter((slot) => slot.available)
-                            .map((slot) => (
-                              <SelectItem key={slot.time} value={slot.time}>
-                                {slot.time} ({slot.count}/{slot.capacity} vagas
-                                ocupadas)
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <SlotTimeSelect
+                      slots={availableSlots}
+                      value={selectedTime}
+                      onValueChange={setSelectedTime}
+                    />
                   )}
 
                 {selectedDate &&
