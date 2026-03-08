@@ -19,7 +19,8 @@ jobs:
           else
             printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > "$GITHUB_WORKSPACE/deploy_key"
           fi
-          chmod 600 "$GITHUB_WORKSPACE/deploy_key"
+          # 644 so the SSH action (runs in container as different user) can read the key
+          chmod 644 "$GITHUB_WORKSPACE/deploy_key"
 
       - name: Deploy to server via SSH
         uses: appleboy/ssh-action@v1.0.3
