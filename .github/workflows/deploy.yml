@@ -66,6 +66,7 @@ jobs:
             git checkout main
             git pull origin main
             IMAGE="${{ needs.build.outputs.image }}"
+            docker compose down
             docker pull "$IMAGE"
             docker tag "$IMAGE" saude-pilates:latest
             docker compose up -d
