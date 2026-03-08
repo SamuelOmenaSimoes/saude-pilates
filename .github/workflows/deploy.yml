@@ -61,7 +61,8 @@ jobs:
           command_timeout: 5m
           script: |
             cd /var/www/saude-pilates-folder/saude-pilates
-            test -f .env || { echo "Error: .env not found in $(pwd)"; exit 1; }
+            export ENV_FILE="$(pwd)/.env"
+            test -f "$ENV_FILE" || { echo "Error: .env not found at $ENV_FILE"; exit 1; }
             git fetch origin
             git checkout main
             git pull origin main
