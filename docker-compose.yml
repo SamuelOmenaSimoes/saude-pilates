@@ -7,7 +7,7 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - .env
+      - ${ENV_FILE:-.env}
     # Override PORT if your reverse proxy or host expects another port
     # environment:
     #   - PORT=3000

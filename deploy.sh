@@ -7,6 +7,9 @@ set -e
 APP_DIR="${DEPLOY_DIR:-/var/www/saude-pilates-folder/saude-pilates}"
 cd "$APP_DIR"
 
+# Use absolute path to .env so Compose finds it even if run from another directory
+export ENV_FILE="${APP_DIR}/.env"
+
 echo "==> Pulling latest from main..."
 git fetch origin
 git checkout main
