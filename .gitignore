@@ -1,7 +1,5 @@
 # dependências
 node_modules
-.pnpm-store
-
 # builds
 dist
 client/dist

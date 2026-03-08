@@ -10,8 +10,7 @@ Sistema de agendamento de aulas para o estúdio Saúde e Pilates. Inclui cadastr
 
 ## Pré-requisitos
 
-- [Node.js](https://nodejs.org/) (v18+)
-- [pnpm](https://pnpm.io/)
+- [Node.js](https://nodejs.org/) (v24+)
 - MySQL (local ou remoto)
 
 ## Configuração
@@ -21,7 +20,7 @@ Sistema de agendamento de aulas para o estúdio Saúde e Pilates. Inclui cadastr
    ```bash
    git clone <url-do-repositorio>
    cd saude-pilates
-   pnpm install
+   npm install
    ```
 
 2. **Variáveis de ambiente**
@@ -47,7 +46,7 @@ Sistema de agendamento de aulas para o estúdio Saúde e Pilates. Inclui cadastr
    Crie o banco MySQL e rode as migrações:
 
    ```bash
-   pnpm db:push
+   npm run db:push
    ```
 
 ## Como rodar
@@ -55,7 +54,7 @@ Sistema de agendamento de aulas para o estúdio Saúde e Pilates. Inclui cadastr
 **Desenvolvimento** (servidor + Vite com hot reload na porta 3000):
 
 ```bash
-pnpm dev
+npm run dev
 ```
 
 Acesse: **http://localhost:3000**
@@ -63,19 +62,19 @@ Acesse: **http://localhost:3000**
 **Produção** (build e servidor):
 
 ```bash
-pnpm build
-pnpm start
+npm run build
+npm start
 ```
 
 O servidor usa a porta definida em `PORT` no `.env` ou **3000** por padrão.
 
 ## Scripts
 
-| Comando       | Descrição                          |
-|---------------|------------------------------------|
-| `pnpm dev`    | Sobe o servidor em modo desenvolvimento |
-| `pnpm build`  | Gera build do frontend e do servidor   |
-| `pnpm start`  | Sobe o servidor em produção            |
-| `pnpm db:push`| Gera e aplica migrações Drizzle        |
-| `pnpm check`  | Verifica tipos TypeScript              |
-| `pnpm test`   | Roda os testes                        |
+| Comando        | Descrição                               |
+| -------------- | --------------------------------------- |
+| `npm run dev`     | Sobe o servidor em modo desenvolvimento |
+| `npm run build`   | Gera build do frontend e do servidor    |
+| `npm start`       | Sobe o servidor em produção             |
+| `npm run db:push` | Gera e aplica migrações Drizzle         |
+| `npm run check`   | Verifica tipos TypeScript               |
+| `npm test`        | Roda os testes                          |
