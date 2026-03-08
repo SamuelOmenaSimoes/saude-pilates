@@ -14,6 +14,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { Users, Calendar, CreditCard, Search } from "lucide-react";
+import { formatPrice } from "@/lib/utils";
 import { maskCPF, maskPhone, validateCPF, validatePhone } from "@/lib/validators";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -668,7 +669,7 @@ function PaymentsTab({ allUsers }: { allUsers: any[] }) {
                 <option value="">Selecione um plano...</option>
                 {plans?.map((plan: any) => (
                   <option key={plan.id} value={plan.id}>
-                    {plan.name} - R$ {(plan.priceInCents / 100).toFixed(2)} ({plan.credits} créditos)
+                    {plan.name} - {formatPrice(plan.priceInCents)} ({plan.credits} créditos)
                   </option>
                 ))}
               </select>
