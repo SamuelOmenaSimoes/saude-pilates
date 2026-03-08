@@ -5,6 +5,10 @@ set -e
 
 # Default app directory (override with DEPLOY_DIR env or first argument)
 APP_DIR="${DEPLOY_DIR:-/var/www/saude-pilates-folder/saude-pilates}"
+# If .env is in the repo subfolder (e.g. DEPLOY_DIR was set to parent folder), use that
+if [ ! -f "${APP_DIR}/.env" ] && [ -f "${APP_DIR}/saude-pilates/.env" ]; then
+  APP_DIR="${APP_DIR}/saude-pilates"
+fi
 cd "$APP_DIR"
 
 # Use absolute path to .env so Compose finds it even if run from another directory

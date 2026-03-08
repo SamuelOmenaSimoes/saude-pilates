@@ -19,6 +19,7 @@ jobs:
           # port: 22   # uncomment and set if your SSH port is not 22
           script: |
             cd /var/www/saude-pilates-folder/saude-pilates
+            export ENV_FILE="/var/www/saude-pilates-folder/saude-pilates/.env"
             git fetch origin
             git checkout main
             git pull origin main

@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    # ENV_FILE: set to full path to .env if you run compose from another dir (e.g. parent folder)
     env_file:
       - ${ENV_FILE:-.env}
     # Override PORT if your reverse proxy or host expects another port
