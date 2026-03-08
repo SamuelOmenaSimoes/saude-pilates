@@ -19,5 +19,10 @@ jobs:
           # port: 22   # uncomment and set if your SSH port is not 22
           script: |
             cd /var/www/saude-pilates-folder/saude-pilates
-            ./deploy.sh
+            git fetch origin
+            git checkout main
+            git pull origin main
+            docker compose build --no-cache
+            docker compose up -d
+            docker image prune -f
           script_stop: true
