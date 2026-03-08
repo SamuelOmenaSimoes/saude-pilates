@@ -1,4 +1,8 @@
-import "dotenv/config";
+// Load .env only in development; in production (Docker) env comes from env_file / process.env
+import dotenv from "dotenv";
+if (process.env.NODE_ENV !== "production") {
+  dotenv.config();
+}
 import express from "express";
 import { createServer } from "http";
 import net from "net";
