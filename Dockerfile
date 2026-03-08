@@ -11,7 +11,7 @@ RUN npm ci --ignore-scripts
 COPY . .
 RUN npm run build
 
-# Production stage
+# Production stage (reuse builder's node_modules, no second npm ci)
 FROM node:24.14-alpine AS production
 
 WORKDIR /app
@@ -19,12 +19,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Copy package files and install production deps only
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
-
-# Copy built output from builder
+COPY package.json ./
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
+RUN npm prune --omit=dev
 
 EXPOSE 3000
 
