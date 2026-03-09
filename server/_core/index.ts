@@ -1,8 +1,5 @@
-// Load .env only in development; in production (Docker) env comes from env_file / process.env
-import dotenv from "dotenv";
-if (process.env.NODE_ENV !== "production") {
-  dotenv.config();
-}
+// Must be first: load .env before any other imports (ESM runs all imports before module body).
+import "./loadEnv";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
@@ -15,7 +12,7 @@ import { serveStatic, setupVite } from "./vite";
 import { startJobs } from "../jobs";
 
 function isPortAvailable(port: number): Promise<boolean> {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const server = net.createServer();
     server.listen(port, () => {
       server.close(() => resolve(true));
@@ -36,13 +33,17 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
-  
+
   // Stripe webhook MUST be registered BEFORE express.json() to preserve raw body
-  app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-    const { handleStripeWebhook } = await import("../stripe-webhook");
-    return handleStripeWebhook(req, res);
-  });
-  
+  app.post(
+    "/api/stripe/webhook",
+    express.raw({ type: "application/json" }),
+    async (req, res) => {
+      const { handleStripeWebhook } = await import("../stripe-webhook");
+      return handleStripeWebhook(req, res);
+    },
+  );
+
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -56,7 +57,7 @@ async function startServer() {
     createExpressMiddleware({
       router: appRouter,
       createContext,
-    })
+    }),
   );
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
