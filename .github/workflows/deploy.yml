@@ -68,9 +68,11 @@ jobs:
             git pull origin main
             test -f "$APP_DIR/docker-compose.yml" || { echo "Error: docker-compose.yml not found at $APP_DIR"; exit 1; }
             IMAGE="${{ needs.build.outputs.image }}"
-            docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.yml" down
+            docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.yml" down --remove-orphans
+            docker stop saude-pilates 2>/dev/null || true
+            docker rm saude-pilates 2>/dev/null || true
             docker pull "$IMAGE"
             docker tag "$IMAGE" saude-pilates:latest
-            docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.yml" up -d
+            docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.yml" up -d --force-recreate
             docker image prune -f
           script_stop: true
