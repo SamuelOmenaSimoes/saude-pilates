@@ -33,7 +33,7 @@ export const appRouter = router({
     me: publicProcedure.query(({ ctx }) => ctx.user),
 
     logout: publicProcedure.mutation(({ ctx }) => {
-      ctx.clearSession();
+      clearSession(ctx.res);
       return { success: true };
     }),
 
