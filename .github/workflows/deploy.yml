@@ -73,19 +73,25 @@ jobs:
             docker rm saude-pilates 2>/dev/null || true
             docker pull "$IMAGE"
             docker tag "$IMAGE" saude-pilates:latest
-            echo "--- Processes listening on port 3000 ---"
+            echo "--- Stopping process manager (so old Node app does not respawn) ---"
+            pm2 stop saude-pilates 2>/dev/null || true
+            pm2 stop all 2>/dev/null || true
+            systemctl stop saude-pilates 2>/dev/null || true
+            systemctl stop node-saude-pilates 2>/dev/null || true
+            supervisorctl stop saude-pilates 2>/dev/null || true
+            echo "--- Processes on port 3000 ---"
             ss -tlnp 2>/dev/null | grep 3000 || echo "(none)"
-            echo "--- Killing process on 3000 (old Node/non-Docker app) ---"
+            echo "--- Killing process on 3000 ---"
             lsof -ti :3000 | xargs -r kill -9 2>/dev/null || true
             fuser -k 3000/tcp 2>/dev/null || true
             sleep 3
             for i in 1 2 3 4 5 6 7 8 9 10; do
               ss -tlnp 2>/dev/null | grep -q 3000 || break
-              echo "Waiting for port 3000 to be free... ($i/10)"
+              echo "Waiting for port 3000... ($i/10)"
               sleep 1
             done
-            ss -tlnp 2>/dev/null | grep 3000 && { echo "Error: port 3000 still in use"; exit 1; }
-            echo "--- Starting container ---"
+            ss -tlnp 2>/dev/null | grep 3000 && { echo "Error: port 3000 still in use. Stop the service that runs the old app (pm2/systemd/supervisor) and re-run deploy."; exit 1; }
+            echo "--- Starting container on 3000 ---"
             docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.yml" up -d --force-recreate
             docker image prune -f
           script_stop: true
