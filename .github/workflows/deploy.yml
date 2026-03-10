@@ -75,7 +75,11 @@ jobs:
             docker tag "$IMAGE" saude-pilates:latest
             echo "--- Processes listening on port 3000 ---"
             ss -tlnp 2>/dev/null | grep 3000 || echo "(none)"
-            echo "--- End port 3000 check ---"
+            echo "--- Killing process on 3000 (old Node/non-Docker app) ---"
+            lsof -ti :3000 | xargs -r kill 2>/dev/null || true
+            fuser -k 3000/tcp 2>/dev/null || true
+            sleep 2
+            echo "--- Starting container ---"
             docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.yml" up -d --force-recreate
             docker image prune -f
           script_stop: true

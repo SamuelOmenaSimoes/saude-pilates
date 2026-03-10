@@ -5,10 +5,16 @@ services:
     container_name: saude-pilates
     restart: unless-stopped
     ports:
-      - "3000:3000"
-    # Env file: set ENV_FILE to full path when running from another dir (e.g. deploy); else .env here
+      - "0.0.0.0:3000:3000"
     env_file:
       - ${ENV_FILE:-.env}
-    # Override PORT if your reverse proxy or host expects another port
-    # environment:
-    #   - PORT=3000
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.0.0/24
