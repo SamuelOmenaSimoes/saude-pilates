@@ -73,6 +73,9 @@ jobs:
             docker rm saude-pilates 2>/dev/null || true
             docker pull "$IMAGE"
             docker tag "$IMAGE" saude-pilates:latest
+            echo "--- Processes listening on port 3000 ---"
+            ss -tlnp 2>/dev/null | grep 3000 || echo "(none)"
+            echo "--- End port 3000 check ---"
             docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.yml" up -d --force-recreate
             docker image prune -f
           script_stop: true
