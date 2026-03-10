@@ -7,11 +7,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm install
 
-# Invalidate cache when commit changes (CI passes CACHE_BUST=git sha)
-ARG CACHE_BUST
-RUN echo "Build from commit: ${CACHE_BUST:-none}"
+# Copy source and build (BUILD_SHA from CI = git commit, injected into client + server)
+ARG BUILD_SHA
+ENV BUILD_SHA=${BUILD_SHA}
 
-# Copy source and build
 COPY . .
 RUN npm run build
 
@@ -20,8 +19,10 @@ FROM node:24.14-alpine AS production
 
 WORKDIR /app
 
+ARG BUILD_SHA
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV BUILD_SHA=${BUILD_SHA}
 
 COPY package.json ./
 COPY --from=builder /app/node_modules ./node_modules

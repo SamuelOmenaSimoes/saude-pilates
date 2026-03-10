@@ -45,6 +45,8 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.image_lc }}
+          build-args: |
+            BUILD_SHA=${{ github.sha }}
           no-cache: true
 
   deploy:

@@ -59,6 +59,10 @@ async function startServer() {
     }),
   );
 
+  app.get("/api/version", (_req, res) => {
+    res.json({ sha: process.env.BUILD_SHA || "unknown", built: "docker" });
+  });
+
   app.use((req, _res, next) => {
     console.log(`${req.method} ${req.url}`);
     next();

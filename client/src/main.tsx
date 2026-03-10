@@ -8,6 +8,11 @@ import App from "./App";
 
 import "./index.css";
 
+// So you can verify which build is running (check browser console or Production → /api/version)
+if (typeof __BUILD_SHA__ !== "undefined") {
+  console.log("[Build]", __BUILD_SHA__);
+}
+
 const queryClient = new QueryClient();
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {

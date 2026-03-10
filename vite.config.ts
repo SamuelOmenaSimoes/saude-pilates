@@ -13,6 +13,9 @@ const plugins = [
 
 export default defineConfig({
   plugins,
+  define: {
+    __BUILD_SHA__: JSON.stringify(process.env.BUILD_SHA || "dev"),
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
