@@ -97,5 +97,10 @@ jobs:
             ( ss -tlnp 2>/dev/null | grep 3000 && echo "Something on 3000, killing..." && ( pids=$(lsof -ti :3000 2>/dev/null); [ -n "$pids" ] && kill -9 $pids; fuser -k 3000/tcp 2>/dev/null; sleep 3 ) || echo "Port 3000 free" ) || true
             echo "--- Starting container on 3000 ---"
             docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.yml" up -d --force-recreate
-            docker image prune -f
+            up_rc=$?
+            docker image prune -f || true
+            if [ "$up_rc" -ne 0 ]; then echo "Warning: docker compose up returned $up_rc"; exit "$up_rc"; fi
+            sleep 2
+            docker ps --filter name=saude-pilates --format '{{.Status}}' | grep -q Up || { echo "Error: container saude-pilates is not running"; docker logs saude-pilates 2>&1 | tail -30; exit 1; }
+            echo "Deploy OK: container is running"
           script_stop: true
