@@ -36,6 +36,7 @@ export default function Login() {
       if (result.success && result.user) {
         toast.success("Login realizado com sucesso!");
         // Update auth cache so RequireAuth sees the user immediately after redirect
+        console.log("novo login feito");
         utils.auth.me.setData(undefined, result.user);
         if (result.user.role === "admin") {
           setLocation("/admin");
