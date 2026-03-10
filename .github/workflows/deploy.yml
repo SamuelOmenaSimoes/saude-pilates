@@ -79,14 +79,14 @@ jobs:
             git fetch origin
             git checkout main
             git pull origin main
-            test -f "$APP_DIR/docker-compose.yml" || { echo "Error: docker-compose.yml not found at $APP_DIR"; exit 1; }
-            IMAGE="${{ needs.build.outputs.image }}"
-            docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.yml" down --remove-orphans
+            COMPOSE_PROD="$APP_DIR/docker-compose.prod.yml"
+            test -f "$COMPOSE_PROD" || { echo "Error: docker-compose.prod.yml not found at $APP_DIR"; exit 1; }
+            export IMAGE="${{ needs.build.outputs.image }}"
+            docker compose --project-directory "$APP_DIR" -f "$COMPOSE_PROD" down --remove-orphans
             docker stop saude-pilates 2>/dev/null || true
             docker rm saude-pilates 2>/dev/null || true
             docker pull "$IMAGE" || { echo "Error: docker pull failed - production would run old image"; exit 1; }
-            docker tag "$IMAGE" saude-pilates:latest
-            echo "--- Using image: $(docker image inspect --format '{{.Id}}' saude-pilates:latest) ---"
+            echo "--- Using image: $(docker image inspect --format '{{.Id}}' $IMAGE) ---"
             echo "--- Stopping process manager (so old Node app does not respawn) ---"
             pm2 stop saude-pilates 2>/dev/null || true
             pm2 stop all 2>/dev/null || true
@@ -96,7 +96,7 @@ jobs:
             echo "--- Freeing port 3000 ---"
             ( ss -tlnp 2>/dev/null | grep 3000 && echo "Something on 3000, killing..." && ( pids=$(lsof -ti :3000 2>/dev/null); [ -n "$pids" ] && kill -9 $pids; fuser -k 3000/tcp 2>/dev/null; sleep 3 ) || echo "Port 3000 free" ) || true
             echo "--- Starting container on 3000 ---"
-            docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.yml" up -d --force-recreate
+            docker compose --project-directory "$APP_DIR" -f "$COMPOSE_PROD" up -d --force-recreate
             up_rc=$?
             docker image prune -f || true
             if [ "$up_rc" -ne 0 ]; then echo "Warning: docker compose up returned $up_rc"; exit "$up_rc"; fi

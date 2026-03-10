@@ -1,0 +1,23 @@
+# Production: run pre-built image only (no local build).
+# Used by GitHub Actions deploy. IMAGE must be set (e.g. ghcr.io/owner/repo:main).
+services:
+  app:
+    image: ${IMAGE}
+    container_name: saude-pilates
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:3000:3000"
+    env_file:
+      - ${ENV_FILE:-.env}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.0.0/24
