@@ -49,6 +49,17 @@ jobs:
             BUILD_SHA=${{ github.sha }}
           no-cache: true
 
+      - name: Verify image serves this commit
+        run: |
+          docker pull ${{ steps.meta.outputs.image_lc }}
+          docker run -d --name verify-build -e DATABASE_URL=mysql://x:x@x:3306/x -p 3002:3000 ${{ steps.meta.outputs.image_lc }}
+          sleep 6
+          resp=$(curl -s http://localhost:3002/api/version)
+          docker stop verify-build
+          docker rm verify-build
+          echo "$resp" | grep -q "\"sha\":\"${{ github.sha }}\"" || { echo "Version mismatch. Response: $resp"; exit 1; }
+          echo "Verified: image serves commit ${{ github.sha }}"
+
   deploy:
     runs-on: ubuntu-latest
     needs: build

@@ -15,12 +15,21 @@ export function serveStatic(app: Express) {
     console.log(`Serving static files from ${distPath}`);
   }
 
-  app.use(express.static(distPath));
+  app.use(
+    express.static(distPath, {
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith("index.html")) {
+          res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+        }
+      },
+    })
+  );
 
   // SPA fallback: serve index.html for GET requests that didn't match a file
   app.get("*", (req, res, next) => {
     const index = path.resolve(distPath, "index.html");
     if (!fs.existsSync(index)) return next();
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
     res.sendFile(index);
   });
 }
