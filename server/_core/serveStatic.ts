@@ -18,9 +18,8 @@ export function serveStatic(app: Express) {
   app.use(
     express.static(distPath, {
       setHeaders: (res, filePath) => {
-        if (filePath.endsWith("index.html")) {
-          res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-        }
+        // Prevent any reverse proxy (nginx, Cloudflare) from serving stale assets
+        res.set("Cache-Control", "no-store, no-cache, must-revalidate");
       },
     })
   );

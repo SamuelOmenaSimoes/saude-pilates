@@ -19,7 +19,8 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image: ${{ steps.meta.outputs.image_lc }}
+      image: ${{ steps.meta.outputs.image_sha_tag }}
+      image_main: ${{ steps.meta.outputs.image_lc }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,7 +28,9 @@ jobs:
       - name: Set image name
         id: meta
         run: |
-          echo "image_lc=${{ env.REGISTRY }}/$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]'):main" >> $GITHUB_OUTPUT
+          REPO="${{ env.REGISTRY }}/$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')"
+          echo "image_lc=${REPO}:main" >> $GITHUB_OUTPUT
+          echo "image_sha_tag=${REPO}:sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -44,7 +47,9 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.image_lc }}
+          tags: |
+            ${{ steps.meta.outputs.image_lc }}
+            ${{ steps.meta.outputs.image_sha_tag }}
           build-args: |
             BUILD_SHA=${{ github.sha }}
           no-cache: true
@@ -52,8 +57,8 @@ jobs:
       - name: Verify image serves this commit
         continue-on-error: true
         run: |
-          docker pull ${{ steps.meta.outputs.image_lc }}
-          docker run -d --name verify-build -e DATABASE_URL=mysql://x:x@x:3306/x -p 3002:3000 ${{ steps.meta.outputs.image_lc }}
+          docker pull ${{ steps.meta.outputs.image_sha_tag }}
+          docker run -d --name verify-build -e DATABASE_URL=mysql://x:x@x:3306/x -p 3002:3000 ${{ steps.meta.outputs.image_sha_tag }}
           sleep 6
           resp=$(curl -s http://localhost:3002/api/version || true)
           docker stop verify-build 2>/dev/null || true
