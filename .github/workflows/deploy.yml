@@ -45,10 +45,7 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.image_lc }}
-          build-args: |
-            CACHE_BUST=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          no-cache: true
 
   deploy:
     runs-on: ubuntu-latest
