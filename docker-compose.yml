@@ -8,6 +8,9 @@ services:
       - "0.0.0.0:3000:3000"
     env_file:
       - ${ENV_FILE:-.env}
+    # So the app can reach MySQL/DB on the host (use host.docker.internal in DATABASE_URL)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - appnet
 
