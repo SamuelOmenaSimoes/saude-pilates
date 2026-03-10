@@ -1,8 +1,11 @@
 import jwt from 'jsonwebtoken';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
+import { getSessionCookieOptions } from './_core/cookies';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const COOKIE_NAME = 'session';
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface SessionPayload {
   userId: number;
@@ -10,18 +13,15 @@ export interface SessionPayload {
   role: 'admin' | 'user';
 }
 
-export function createSession(payload: SessionPayload, res: Response): string {
+export function createSession(payload: SessionPayload, res: Response, req: Request): string {
   const token = jwt.sign(payload, JWT_SECRET, {
     expiresIn: '7d', // Token válido por 7 dias
   });
 
-  // Configurar cookie HTTP-only
+  const options = getSessionCookieOptions(req);
   res.cookie(COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias em ms
-    path: '/',
+    ...options,
+    maxAge: SEVEN_DAYS_MS,
   });
 
   return token;
@@ -36,13 +36,9 @@ export function verifySession(token: string): SessionPayload | null {
   }
 }
 
-export function clearSession(res: Response): void {
-  res.clearCookie(COOKIE_NAME, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-  });
+export function clearSession(res: Response, req: Request): void {
+  const options = getSessionCookieOptions(req);
+  res.clearCookie(COOKIE_NAME, options);
 }
 
 export { COOKIE_NAME };

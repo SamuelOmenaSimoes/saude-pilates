@@ -33,7 +33,7 @@ export const appRouter = router({
     me: publicProcedure.query(({ ctx }) => ctx.user),
 
     logout: publicProcedure.mutation(({ ctx }) => {
-      clearSession(ctx.res);
+      clearSession(ctx.res, ctx.req);
       return { success: true };
     }),
 
@@ -143,6 +143,7 @@ export const appRouter = router({
             role: "user",
           },
           ctx.res,
+          ctx.req,
         );
 
         return { success: true, message: "Cadastro realizado com sucesso!" };
@@ -203,6 +204,7 @@ export const appRouter = router({
             role: user.role as "admin" | "user",
           },
           ctx.res,
+          ctx.req,
         );
 
         return { success: true, user };
@@ -247,6 +249,7 @@ export const appRouter = router({
             role: "admin",
           },
           ctx.res,
+          ctx.req,
         );
 
         return { success: true, user: adminUser };

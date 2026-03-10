@@ -1,6 +1,6 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { verifySession, COOKIE_NAME } from "../session";
+import { verifySession, clearSession, COOKIE_NAME } from "../session";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -30,7 +30,7 @@ export async function createContext(
           user = dbUser;
         } else {
           // User was deleted, clear cookie
-          opts.res.clearCookie(COOKIE_NAME);
+          clearSession(opts.res, opts.req);
         }
       }
     }

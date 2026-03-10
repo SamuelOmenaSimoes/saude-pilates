@@ -34,6 +34,8 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   await logDatabaseConnection();
   const app = express();
+  // Trust first proxy so req.protocol / X-Forwarded-Proto work (cookies, redirects)
+  app.set("trust proxy", 1);
   const server = createServer(app);
 
   app.post(

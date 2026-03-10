@@ -32,6 +32,7 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   const app = express();
+  app.set("trust proxy", 1);
   const server = createServer(app);
 
   // Stripe webhook MUST be registered BEFORE express.json() to preserve raw body
