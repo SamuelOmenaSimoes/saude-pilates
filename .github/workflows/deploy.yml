@@ -60,6 +60,7 @@ jobs:
           password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
           command_timeout: 5m
           script: |
+            set +e
             APP_DIR="/var/www/saude-pilates-folder"
             if test -f "${APP_DIR}/.env"; then export ENV_FILE="${APP_DIR}/.env"; elif test -f "${APP_DIR}/saude-pilates/.env"; then export ENV_FILE="${APP_DIR}/saude-pilates/.env"; else echo "Error: .env not found at ${APP_DIR}/.env or ${APP_DIR}/saude-pilates/.env"; exit 1; fi
             cd "$APP_DIR" || { echo "Error: APP_DIR not found: $APP_DIR"; exit 1; }
@@ -81,7 +82,7 @@ jobs:
             supervisorctl stop saude-pilates 2>/dev/null || true
             echo "--- Processes on port 3000 ---"
             ss -tlnp 2>/dev/null | grep 3000 || echo "(none)"
-            port_in_use=$(ss -tlnp 2>/dev/null | grep 3000 || true)
+            port_in_use=$(ss -tlnp 2>/dev/null | grep 3000; true)
             if [ -n "$port_in_use" ]; then
               echo "--- Killing process on 3000 ---"
               pids=$(lsof -ti :3000 2>/dev/null || true)
