@@ -7,6 +7,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm install
 
+# Invalidate cache when commit changes (CI passes CACHE_BUST=git sha)
+ARG CACHE_BUST
+RUN echo "Build from commit: ${CACHE_BUST:-none}"
+
 # Copy source and build
 COPY . .
 RUN npm run build

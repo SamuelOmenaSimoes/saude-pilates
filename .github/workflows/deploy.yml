@@ -45,6 +45,8 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.image_lc }}
+          build-args: |
+            CACHE_BUST=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -72,8 +74,9 @@ jobs:
             docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.yml" down --remove-orphans
             docker stop saude-pilates 2>/dev/null || true
             docker rm saude-pilates 2>/dev/null || true
-            docker pull "$IMAGE"
+            docker pull "$IMAGE" || { echo "Error: docker pull failed - production would run old image"; exit 1; }
             docker tag "$IMAGE" saude-pilates:latest
+            echo "--- Using image: $(docker image inspect --format '{{.Id}}' saude-pilates:latest) ---"
             echo "--- Stopping process manager (so old Node app does not respawn) ---"
             pm2 stop saude-pilates 2>/dev/null || true
             pm2 stop all 2>/dev/null || true
