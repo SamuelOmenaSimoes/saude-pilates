@@ -24,6 +24,35 @@ import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+/** Return DB host from DATABASE_URL for logging (no password). */
+export function getDatabaseHostForLog(): string {
+  const u = process.env.DATABASE_URL;
+  if (!u) return "(DATABASE_URL not set)";
+  try {
+    const url = new URL(u.replace(/^mysql:/, "http:"));
+    return `${url.hostname}:${url.port || "3306"}`;
+  } catch {
+    return "(invalid URL)";
+  }
+}
+
+/** Test DB connection and log result. Call at startup in production. */
+export async function logDatabaseConnection(): Promise<void> {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.warn("[Database] DATABASE_URL not set");
+    return;
+  }
+  const host = getDatabaseHostForLog();
+  try {
+    const db = drizzle(url);
+    await db.execute(sql`SELECT 1`);
+    console.log("[Database] Connected to", host);
+  } catch (err) {
+    console.error("[Database] Failed to connect to", host, err);
+  }
+}
+
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
