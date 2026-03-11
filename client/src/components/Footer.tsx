@@ -101,6 +101,11 @@ export default function Footer() {
 
         <div className="mt-8 pt-8 border-t text-center text-sm text-muted-foreground">
           <p>&copy; {new Date().getFullYear()} Saúde e Pilates. Todos os direitos reservados.</p>
+          {typeof __BUILD_SHA__ !== "undefined" && (
+            <p className="mt-1 text-xs opacity-60" title="Client build (deve bater com /api/version)">
+              build: {__BUILD_SHA__.slice(0, 7)}
+            </p>
+          )}
         </div>
       </div>
     </footer>
