@@ -3,16 +3,19 @@ import fs from "fs";
 import path from "path";
 
 export function serveStatic(app: Express) {
+  // Production: use cwd-relative path so the path is correct when running from Docker (WORKDIR /app).
+  // Relying on import.meta.dirname in the bundled server can be wrong depending on bundler/runtime.
   const distPath =
     process.env.NODE_ENV === "development"
       ? path.resolve(import.meta.dirname, "../..", "dist", "public")
-      : path.resolve(import.meta.dirname, "public");
+      : path.join(process.cwd(), "dist", "public");
   if (!fs.existsSync(distPath)) {
     console.error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`
     );
   } else {
-    console.log(`Serving static files from ${distPath}`);
+    const indexExists = fs.existsSync(path.join(distPath, "index.html"));
+    console.log(`Serving static files from ${distPath} (index.html: ${indexExists})`);
   }
 
   app.use(
