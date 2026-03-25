@@ -1,8 +1,9 @@
 # Deploy to DigitalOcean when code is pushed/merged to main.
 # Build runs on GitHub; server only pulls the image (no build on server = fast deploy).
 # Required secrets: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_PASSWORD (SSH login password)
-# GHCR: Make the package public (repo → Packages → saude-pilates → Package settings → Change visibility)
-#   or on the server run: echo $GHCR_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
+# GHCR pull: private packages need auth. Either make the package public (repo → Packages → settings),
+#   or add repo secrets GHCR_PULL_USER + GHCR_PULL_TOKEN (classic PAT: read:packages), or once on server:
+#   echo TOKEN | docker login ghcr.io -u USERNAME --password-stdin
 name: Deploy to production
 
 on:
@@ -68,6 +69,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
+    env:
+      GHCR_PULL_USER: ${{ secrets.GHCR_PULL_USER }}
+      GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
     steps:
       - name: Deploy to server via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -76,6 +80,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           password: ${{ secrets.DEPLOY_SSH_PASSWORD }}
           command_timeout: 5m
+          envs: GHCR_PULL_USER,GHCR_PULL_TOKEN
           script: |
             set +e
             APP_DIR="/var/www/saude-pilates-folder"
@@ -90,7 +95,10 @@ jobs:
             docker compose --project-directory "$APP_DIR" -f "$COMPOSE_PROD" down --remove-orphans
             docker stop saude-pilates 2>/dev/null || true
             docker rm saude-pilates 2>/dev/null || true
-            docker pull "$IMAGE" || { echo "Error: docker pull failed - production would run old image"; exit 1; }
+            if [ -n "$GHCR_PULL_TOKEN" ] && [ -n "$GHCR_PULL_USER" ]; then
+              echo "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "$GHCR_PULL_USER" --password-stdin || { echo "Error: docker login to ghcr.io failed"; exit 1; }
+            fi
+            docker pull "$IMAGE" || { echo "Error: docker pull failed - production would run old image (private GHCR: set GHCR_PULL_USER + GHCR_PULL_TOKEN or make package public)"; exit 1; }
             echo "--- Using image: $(docker image inspect --format '{{.Id}}' $IMAGE) ---"
             echo "--- Stopping process manager (so old Node app does not respawn) ---"
             pm2 stop saude-pilates 2>/dev/null || true
