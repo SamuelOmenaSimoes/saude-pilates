@@ -68,6 +68,27 @@ npm start
 
 O servidor usa a porta definida em `PORT` no `.env` ou **3000** por padrão.
 
+### Logs em produção
+
+No modo produção (`npm start`), o servidor duplica tudo que vai para `console.*` para um arquivo de texto (além do stdout/stderr).
+
+**Onde fica o arquivo**
+
+- **Padrão:** pasta temporária do sistema, arquivo `saude-pilates-server.log`.
+  - Linux/macOS: em geral `/tmp/saude-pilates-server.log`
+  - Windows: pasta retornada pela variável de ambiente `TEMP` ou `TMP`
+- **Personalizar o caminho:** defina `SERVER_LOG_FILE` no `.env` (caminho absoluto recomendado, por exemplo `/var/log/saude-pilates/server.log`).
+- **Desligar o arquivo:** `SERVER_LOG_TO_FILE=false`
+
+**Como ver ou baixar**
+
+- **Na mesma máquina:** `tail -f /tmp/saude-pilates-server.log` (ajuste o caminho se usar `SERVER_LOG_FILE`).
+- **SSH:** copie para sua máquina com `scp`, por exemplo:
+  `scp usuario@servidor:/tmp/saude-pilates-server.log ./server.log`
+- **Docker:** use o caminho **dentro do container** (o padrão continua sendo `/tmp/saude-pilates-server.log` salvo se você definir `SERVER_LOG_FILE`):
+  `docker cp <nome_ou_id_do_container>:/tmp/saude-pilates-server.log ./server.log`  
+  Se montar um volume no diretório do log, o arquivo também fica acessível no host nesse caminho.
+
 ## Scripts
 
 | Comando        | Descrição                               |

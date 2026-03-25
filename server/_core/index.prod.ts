@@ -1,5 +1,7 @@
 // Production entry: no Vite or dev deps. Must be first: load .env before any other imports.
 import "./loadEnv";
+// Tee console to a file (see prodConsoleSink.ts); must run before other imports that log.
+import "./prodConsoleSink";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
