@@ -91,8 +91,8 @@ No modo produção (`npm start`), o servidor duplica tudo que vai para `console.
 
 ## Scripts
 
-| Comando        | Descrição                               |
-| -------------- | --------------------------------------- |
+| Comando           | Descrição                               |
+| ----------------- | --------------------------------------- |
 | `npm run dev`     | Sobe o servidor em modo desenvolvimento |
 | `npm run build`   | Gera build do frontend e do servidor    |
 | `npm start`       | Sobe o servidor em produção             |
