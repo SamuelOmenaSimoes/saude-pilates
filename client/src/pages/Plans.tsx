@@ -10,47 +10,43 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 export default function Plans() {
-  const checkout = trpc.stripe.createCheckoutSession.useMutation();
-  const checkoutOneTime = trpc.stripe.createOneTimeCheckout.useMutation();
   const { data: plans, isLoading } = trpc.plans.list.useQuery();
+  const checkout = trpc.stripe.createPlanCheckout.useMutation();
   const { isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
 
   const handleSelectPlan = async (plan: any) => {
-  if (!isAuthenticated) {
-    toast.info("Faça login para adquirir um plano");
-    setLocation("/login");
-    return;
-  }
-
-  try {
-    toast.loading("Redirecionando para pagamento...");
-
-    const mutation =
-      plan.type === "single"
-        ? checkoutOneTime
-        : checkout;
-
-    const { url } = await mutation.mutateAsync({
-      priceId: plan.priceId,
-    });
-
-    if (url) {
-      window.location.href = url;
+    if (!isAuthenticated) {
+      toast.info("Faça login para adquirir um plano");
+      setLocation("/login");
+      return;
     }
-  } catch {
-    toast.error("Erro ao criar checkout");
-  }
-};
 
+    try {
+      toast.loading("Redirecionando para pagamento...");
 
-  const groupedPlans = plans?.reduce((acc, plan) => {
-    if (!acc[plan.frequency]) {
-      acc[plan.frequency] = [];
+      const { url } = await checkout.mutateAsync({
+        planId: plan.id,
+      });
+
+      if (url) {
+        window.location.href = url;
+      }
+    } catch {
+      toast.error("Erro ao criar checkout");
     }
-    acc[plan.frequency].push(plan);
-    return acc;
-  }, {} as Record<string, typeof plans>);
+  };
+
+  const groupedPlans = plans?.reduce(
+    (acc, plan) => {
+      if (!acc[plan.frequency]) {
+        acc[plan.frequency] = [];
+      }
+      acc[plan.frequency].push(plan);
+      return acc;
+    },
+    {} as Record<string, typeof plans>,
+  );
 
   const frequencyLabels: Record<string, string> = {
     "1x": "1x por semana",
@@ -83,8 +79,8 @@ export default function Plans() {
               Nossos Planos
             </h1>
             <p className="text-lg text-muted-foreground md:text-xl">
-              Escolha o plano ideal para sua rotina e objetivos. 
-              Todos os planos incluem aulas em grupo com até 4 alunos.
+              Escolha o plano ideal para sua rotina e objetivos. Todos os planos
+              incluem aulas em grupo com até 4 alunos.
             </p>
           </div>
         </div>
@@ -93,100 +89,97 @@ export default function Plans() {
       {/* Plans Section */}
       <section className="py-20">
         <div className="container">
-          {groupedPlans && Object.entries(groupedPlans).map(([frequency, frequencyPlans]) => (
-            <div key={frequency} className="mb-16">
-              <h2 className="mb-8 text-center text-3xl font-bold">
-                {frequencyLabels[frequency]}
-              </h2>
-              
-              <div className="grid gap-8 md:grid-cols-3">
-                {frequencyPlans.map((plan) => {
-                  const pricePerClass = plan.priceInCents / plan.totalClasses;
-                  const isPopular = plan.duration === "semester";
-                  
-                  return (
-                    <Card 
-                      key={plan.id} 
-                      className={`relative border-2 transition-smooth hover:shadow-lg ${
-                        isPopular ? "border-primary" : ""
-                      }`}
-                    >
-                      {isPopular && (
-                        <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-primary px-4 py-1 text-sm font-semibold text-white">
-                          Mais Econômico
-                        </div>
-                      )}
-                      
-                      <CardHeader>
-                        <CardTitle className="text-center">
-                          {plan.duration === "monthly" && "Mensal"}
-                          {plan.duration === "quarterly" && "Trimestral"}
-                          {plan.duration === "semester" && "Semestral"}
-                        </CardTitle>
-                      </CardHeader>
-                      
-                      <CardContent>
-                        <div className="mb-6 text-center">
-                          <div className="mb-2 text-5xl font-bold text-primary">
-                            {plan.totalClasses}
+          {groupedPlans &&
+            Object.entries(groupedPlans).map(([frequency, frequencyPlans]) => (
+              <div key={frequency} className="mb-16">
+                <h2 className="mb-8 text-center text-3xl font-bold">
+                  {frequencyLabels[frequency]}
+                </h2>
+
+                <div className="grid gap-8 md:grid-cols-3">
+                  {frequencyPlans.map((plan) => {
+                    const pricePerClass = plan.priceInCents / plan.totalClasses;
+                    const isPopular = plan.duration === "semester";
+
+                    return (
+                      <Card
+                        key={plan.id}
+                        className={`relative border-2 transition-smooth hover:shadow-lg ${
+                          isPopular ? "border-primary" : ""
+                        }`}
+                      >
+                        {isPopular && (
+                          <div className="absolute -top-4 left-1/2 -translate-x-1/2 rounded-full bg-primary px-4 py-1 text-sm font-semibold text-white">
+                            Mais Econômico
                           </div>
-                          <p className="text-lg font-medium">
-                            aulas
-                          </p>
-                          <p className="mt-2 text-sm text-muted-foreground">
-                            {plan.description}
-                          </p>
-                        </div>
+                        )}
 
-                        <ul className="mb-6 space-y-3">
-                          <li className="flex items-start gap-2">
-                            <Check className="h-5 w-5 flex-shrink-0 text-primary" />
-                            <span className="text-sm">
-                              Aulas em grupo (máx. 4 alunos)
-                            </span>
-                          </li>
-                          <li className="flex items-start gap-2">
-                            <Check className="h-5 w-5 flex-shrink-0 text-primary" />
-                            <span className="text-sm">
-                              Horários flexíveis
-                            </span>
-                          </li>
-                          <li className="flex items-start gap-2">
-                            <Check className="h-5 w-5 flex-shrink-0 text-primary" />
-                            <span className="text-sm">
-                              Acompanhamento profissional
-                            </span>
-                          </li>
-                        </ul>
+                        <CardHeader>
+                          <CardTitle className="text-center">
+                            {plan.duration === "monthly" && "Mensal"}
+                            {plan.duration === "quarterly" && "Trimestral"}
+                            {plan.duration === "semester" && "Semestral"}
+                          </CardTitle>
+                        </CardHeader>
 
-                        <Button
-                          className="w-full"
-                          variant={isPopular ? "default" : "outline"}
-                          onClick={() => handleSelectPlan(plan)}
-                          disabled={checkout.isPending || checkoutOneTime.isPending}
-                        >
-                          Assinar Plano
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+                        <CardContent>
+                          <div className="mb-6 text-center">
+                            <div className="mb-2 text-5xl font-bold text-primary">
+                              {plan.totalClasses}
+                            </div>
+                            <p className="text-lg font-medium">aulas</p>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              {plan.description}
+                            </p>
+                          </div>
+
+                          <ul className="mb-6 space-y-3">
+                            <li className="flex items-start gap-2">
+                              <Check className="h-5 w-5 flex-shrink-0 text-primary" />
+                              <span className="text-sm">
+                                Aulas em grupo (máx. 4 alunos)
+                              </span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <Check className="h-5 w-5 flex-shrink-0 text-primary" />
+                              <span className="text-sm">
+                                Horários flexíveis
+                              </span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <Check className="h-5 w-5 flex-shrink-0 text-primary" />
+                              <span className="text-sm">
+                                Acompanhamento profissional
+                              </span>
+                            </li>
+                          </ul>
+
+                          <Button
+                            className="w-full"
+                            variant={isPopular ? "default" : "outline"}
+                            onClick={() => handleSelectPlan(plan)}
+                            disabled={checkout.isPending}
+                          >
+                            Assinar Plano
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
 
           {/* Single Class Card */}
           <div className="mt-16">
-            <h2 className="mb-8 text-center text-3xl font-bold">
-              Aula Avulsa
-            </h2>
-            
+            <h2 className="mb-8 text-center text-3xl font-bold">Aula Avulsa</h2>
+
             <div className="mx-auto max-w-md">
               <Card className="border-2">
                 <CardHeader>
                   <CardTitle className="text-center">Aula Individual</CardTitle>
                 </CardHeader>
-                
+
                 <CardContent>
                   <div className="mb-6 text-center">
                     <div className="mb-2 text-4xl font-bold">R$ 60,00</div>
@@ -202,7 +195,9 @@ export default function Plans() {
                     </li>
                     <li className="flex items-start gap-2">
                       <Check className="h-5 w-5 flex-shrink-0 text-primary" />
-                      <span className="text-sm">Aula em grupo (máx. 4 alunos)</span>
+                      <span className="text-sm">
+                        Aula em grupo (máx. 4 alunos)
+                      </span>
                     </li>
                     <li className="flex items-start gap-2">
                       <Check className="h-5 w-5 flex-shrink-0 text-primary" />
@@ -213,7 +208,7 @@ export default function Plans() {
                   <Button
                     className="w-full"
                     variant="outline"
-                    onClick={() => window.location.href = "/single-class"}
+                    onClick={() => (window.location.href = "/single-class")}
                   >
                     Comprar Aula Avulsa
                   </Button>
@@ -231,23 +226,32 @@ export default function Plans() {
             <h2 className="mb-6 text-center text-3xl font-bold">
               Informações Importantes
             </h2>
-            
+
             <div className="space-y-4 text-muted-foreground">
               <p>
-                <strong className="text-foreground">Sistema de Créditos:</strong> Cada plano adiciona créditos à sua conta. 
-                1 crédito = 1 aula. Use seus créditos para agendar aulas quando quiser.
+                <strong className="text-foreground">
+                  Sistema de Créditos:
+                </strong>{" "}
+                Cada plano adiciona créditos à sua conta. 1 crédito = 1 aula.
+                Use seus créditos para agendar aulas quando quiser.
               </p>
               <p>
-                <strong className="text-foreground">Política de Cancelamento:</strong> Você pode cancelar aulas com até 24 horas 
-                de antecedência e receber o crédito de volta. Cancelamentos com menos de 24 horas não geram devolução.
+                <strong className="text-foreground">
+                  Política de Cancelamento:
+                </strong>{" "}
+                Você pode cancelar aulas com até 24 horas de antecedência e
+                receber o crédito de volta. Cancelamentos com menos de 24 horas
+                não geram devolução.
               </p>
               <p>
-                <strong className="text-foreground">Pagamento:</strong> Todos os pagamentos são processados de forma segura 
-                através do Stripe. Aceitamos cartões de crédito e débito.
+                <strong className="text-foreground">Pagamento:</strong> Todos os
+                pagamentos são processados de forma segura através do Stripe.
+                Aceitamos cartões de crédito e débito.
               </p>
               <p>
-                <strong className="text-foreground">Dúvidas?</strong> Entre em contato conosco pelo WhatsApp ou e-mail. 
-                Estamos aqui para ajudar!
+                <strong className="text-foreground">Dúvidas?</strong> Entre em
+                contato conosco pelo WhatsApp ou e-mail. Estamos aqui para
+                ajudar!
               </p>
             </div>
           </div>

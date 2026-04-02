@@ -1791,15 +1791,45 @@ export const appRouter = router({
 
         const origin = ctx.req.headers.origin || "http://localhost:3000";
 
+        const brl = (cents: number) =>
+          (cents / 100).toFixed(2).replace(".", ",");
+        const productDescription = [
+          plan.description,
+          `${plan.credits} crédito(s)`,
+          plan.installments > 1
+            ? `Até ${plan.installments}x sem juros de R$ ${brl(plan.installmentPriceInCents)}`
+            : `Total à vista: R$ ${brl(plan.priceInCents)}`,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+
         const session = await stripe.checkout.sessions.create({
           mode: "payment",
           payment_method_types: ["card"],
           line_items: [
             {
-              price: plan.stripePriceId,
+              price_data: {
+                currency: "brl",
+                product_data: {
+                  name: plan.name,
+                  description: productDescription,
+                },
+                unit_amount: plan.priceInCents,
+              },
               quantity: 1,
             },
           ],
+          ...(plan.installments > 1
+            ? {
+                payment_method_options: {
+                  card: {
+                    installments: {
+                      enabled: true,
+                    },
+                  },
+                },
+              }
+            : {}),
           customer_email: user.email || undefined,
           client_reference_id: ctx.user.id.toString(),
           metadata: {
@@ -1807,6 +1837,9 @@ export const appRouter = router({
             type: "plan",
             plan_id: plan.id.toString(),
             credits: plan.credits.toString(),
+            installments: plan.installments.toString(),
+            installment_price_in_cents: plan.installmentPriceInCents.toString(),
+            price_in_cents: plan.priceInCents.toString(),
           },
           success_url: `${origin}/success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${origin}/plans`,
