@@ -60,6 +60,12 @@ export async function handleStripeWebhook(req: Request, res: Response) {
         break;
       }
 
+      case "invoice.paid": {
+        const invoice = event.data.object as Stripe.Invoice;
+        await handleInvoicePaid(invoice);
+        break;
+      }
+
       case "payment_intent.succeeded": {
         const paymentIntent = event.data.object as Stripe.PaymentIntent;
         console.log(`[Stripe Webhook] Payment succeeded: ${paymentIntent.id}`);
@@ -91,8 +97,83 @@ export async function handleStripeWebhook(req: Request, res: Response) {
   }
 }
 
+/** After N paid monthly invoices (N = plan.installments), cancel the subscription. */
+async function handleInvoicePaid(invoice: Stripe.Invoice) {
+  let subscriptionId: string | undefined;
+
+  const parent = invoice.parent;
+  if (
+    parent?.type === "subscription_details" &&
+    parent.subscription_details
+  ) {
+    const subRef = parent.subscription_details.subscription;
+    subscriptionId =
+      typeof subRef === "string" ? subRef : subRef.id;
+  } else {
+    const legacy = (
+      invoice as Stripe.Invoice & {
+        subscription?: string | Stripe.Subscription | null;
+      }
+    ).subscription;
+    if (legacy) {
+      subscriptionId = typeof legacy === "string" ? legacy : legacy.id;
+    }
+  }
+
+  if (!subscriptionId) return;
+
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  const billingInstallments = parseInt(
+    subscription.metadata.billing_installments || "0",
+    10,
+  );
+  if (!billingInstallments || billingInstallments <= 0) return;
+  if (subscription.metadata.type !== "plan") return;
+
+  const paidInvoices = await stripe.invoices.list({
+    subscription: subscriptionId,
+    status: "paid",
+    limit: 100,
+  });
+  const paidCount = paidInvoices.data.filter((inv) => inv.amount_paid > 0)
+    .length;
+
+  if (paidCount >= billingInstallments) {
+    await stripe.subscriptions.cancel(subscriptionId);
+    console.log(
+      `[Stripe Webhook] Subscription ${subscriptionId} cancelled after ${paidCount} installment(s) (target=${billingInstallments})`,
+    );
+  }
+}
+
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   console.log(`[Stripe Webhook] Checkout completed: ${session.id}`);
+
+  let paymentIntentId: string | undefined;
+  if (typeof session.payment_intent === "string") {
+    paymentIntentId = session.payment_intent;
+  } else if (session.payment_intent && typeof session.payment_intent === "object") {
+    paymentIntentId = session.payment_intent.id;
+  }
+
+  let subscriptionId: string | undefined;
+  if (session.mode === "subscription" && session.subscription) {
+    subscriptionId =
+      typeof session.subscription === "string"
+        ? session.subscription
+        : session.subscription.id;
+    const sub = await stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ["latest_invoice.payments.data.payment.payment_intent"],
+    });
+    const inv = sub.latest_invoice;
+    if (inv && typeof inv !== "string") {
+      const firstPayment = inv.payments?.data?.[0];
+      const pi = firstPayment?.payment?.payment_intent;
+      if (pi) {
+        paymentIntentId = typeof pi === "string" ? pi : pi.id;
+      }
+    }
+  }
 
   // Extract metadata
   const userId = session.metadata?.user_id;
@@ -125,7 +206,8 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       planId: planId ? parseInt(planId) : null,
       amountInCents: session.amount_total || 0,
       stripeSessionId: session.id,
-      stripePaymentIntentId: session.payment_intent as string,
+      stripePaymentIntentId: paymentIntentId,
+      stripeSubscriptionId: subscriptionId,
       status: "completed",
       creditsAdded: credits,
     });
@@ -136,8 +218,15 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     await db.updatePurchaseStatus(
       purchase.id,
       "completed",
-      session.payment_intent as string,
+      paymentIntentId,
     );
+    if (subscriptionId) {
+      await db.updatePurchaseSubscription(
+        purchase.id,
+        subscriptionId,
+        paymentIntentId,
+      );
+    }
   }
   if (!purchase) {
     console.error("[Stripe Webhook] Failed to create/retrieve purchase");

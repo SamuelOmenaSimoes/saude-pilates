@@ -139,6 +139,8 @@ export const purchases = mysqlTable("purchases", {
   amountInCents: int("amountInCents").notNull(),
   stripeSessionId: varchar("stripeSessionId", { length: 255 }).unique(),
   stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }),
+  /** Set for plan purchases billed via Stripe Subscriptions (monthly installments). */
+  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }),
   status: mysqlEnum("status", ["pending", "completed", "failed", "refunded"]).default("pending").notNull(),
   creditsAdded: int("creditsAdded").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

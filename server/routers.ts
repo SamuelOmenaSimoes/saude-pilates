@@ -1751,6 +1751,175 @@ export const appRouter = router({
         await db.deleteBlockedTimeSlot(input.id);
         return { success: true };
       }),
+
+    listAllPlansAdmin: adminProcedure.query(async () => {
+      return await db.getAllPlansIncludingInactive();
+    }),
+
+    createPlan: adminProcedure
+      .input(
+        z.object({
+          name: z.string().min(1),
+          description: z.string().optional(),
+          frequency: z.enum(["1x", "2x", "3x"]),
+          duration: z.enum(["monthly", "quarterly", "semester"]),
+          totalClasses: z.number().int().positive(),
+          priceInCents: z.number().int().nonnegative(),
+          installments: z.number().int().min(1),
+          installmentPriceInCents: z.number().int().nonnegative(),
+          credits: z.number().int().positive(),
+          isActive: z.boolean().optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        await db.createPlan({
+          name: input.name,
+          description: input.description,
+          frequency: input.frequency,
+          duration: input.duration,
+          totalClasses: input.totalClasses,
+          priceInCents: input.priceInCents,
+          installments: input.installments,
+          installmentPriceInCents: input.installmentPriceInCents,
+          credits: input.credits,
+          isActive: input.isActive ?? true,
+        });
+        return { success: true };
+      }),
+
+    updatePlan: adminProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().min(1).optional(),
+          description: z.string().optional().nullable(),
+          frequency: z.enum(["1x", "2x", "3x"]).optional(),
+          duration: z.enum(["monthly", "quarterly", "semester"]).optional(),
+          totalClasses: z.number().int().positive().optional(),
+          priceInCents: z.number().int().nonnegative().optional(),
+          installments: z.number().int().min(1).optional(),
+          installmentPriceInCents: z.number().int().nonnegative().optional(),
+          credits: z.number().int().positive().optional(),
+          isActive: z.boolean().optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...rest } = input;
+        const plan = await db.getPlanById(id);
+        if (!plan) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Plano não encontrado",
+          });
+        }
+        const payload: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(rest)) {
+          if (v !== undefined) payload[k] = v;
+        }
+        if (Object.keys(payload).length === 0) {
+          return { success: true };
+        }
+        await db.updatePlan(id, payload as Parameters<typeof db.updatePlan>[1]);
+        return { success: true };
+      }),
+
+    listUnitsWithRooms: adminProcedure.query(async () => {
+      return await db.getAllUnitsWithRooms();
+    }),
+
+    createUnit: adminProcedure
+      .input(
+        z.object({
+          name: z.string().min(1),
+          address: z.string().min(1),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const id = await db.createUnit(input);
+        return { success: true, id };
+      }),
+
+    updateUnit: adminProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().min(1).optional(),
+          address: z.string().min(1).optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...rest } = input;
+        const unit = await db.getUnitById(id);
+        if (!unit) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Unidade não encontrada",
+          });
+        }
+        const payload: Record<string, string> = {};
+        if (rest.name !== undefined) payload.name = rest.name;
+        if (rest.address !== undefined) payload.address = rest.address;
+        if (Object.keys(payload).length === 0) {
+          return { success: true };
+        }
+        await db.updateUnit(id, payload);
+        return { success: true };
+      }),
+
+    createRoom: adminProcedure
+      .input(
+        z.object({
+          unitId: z.number(),
+          name: z.string().min(1),
+          maxCapacity: z.number().int().positive(),
+          isGroupOnly: z.boolean().optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const unit = await db.getUnitById(input.unitId);
+        if (!unit) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Unidade não encontrada",
+          });
+        }
+        await db.createRoom({
+          unitId: input.unitId,
+          name: input.name,
+          maxCapacity: input.maxCapacity,
+          isGroupOnly: input.isGroupOnly ?? true,
+        });
+        return { success: true };
+      }),
+
+    updateRoom: adminProcedure
+      .input(
+        z.object({
+          id: z.number(),
+          name: z.string().min(1).optional(),
+          maxCapacity: z.number().int().positive().optional(),
+          isGroupOnly: z.boolean().optional(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...rest } = input;
+        const room = await db.getRoomById(id);
+        if (!room) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Sala não encontrada",
+          });
+        }
+        const payload: Record<string, unknown> = {};
+        if (rest.name !== undefined) payload.name = rest.name;
+        if (rest.maxCapacity !== undefined) payload.maxCapacity = rest.maxCapacity;
+        if (rest.isGroupOnly !== undefined) payload.isGroupOnly = rest.isGroupOnly;
+        if (Object.keys(payload).length === 0) {
+          return { success: true };
+        }
+        await db.updateRoom(id, payload as Parameters<typeof db.updateRoom>[1]);
+        return { success: true };
+      }),
   }),
 
   stripe: router({
@@ -1793,18 +1962,17 @@ export const appRouter = router({
 
         const brl = (cents: number) =>
           (cents / 100).toFixed(2).replace(".", ",");
+        const purchaseId = Number(purchaseResult[0].insertId);
         const productDescription = [
           plan.description,
           `${plan.credits} crédito(s)`,
-          plan.installments > 1
-            ? `Até ${plan.installments}x sem juros de R$ ${brl(plan.installmentPriceInCents)}`
-            : `Total à vista: R$ ${brl(plan.priceInCents)}`,
+          `Assinatura: R$ ${brl(plan.installmentPriceInCents)}/mês por ${plan.installments} ${plan.installments === 1 ? "mês" : "meses"} (total R$ ${brl(plan.priceInCents)})`,
         ]
           .filter(Boolean)
           .join(" · ");
 
         const session = await stripe.checkout.sessions.create({
-          mode: "payment",
+          mode: "subscription",
           payment_method_types: ["card"],
           line_items: [
             {
@@ -1814,22 +1982,14 @@ export const appRouter = router({
                   name: plan.name,
                   description: productDescription,
                 },
-                unit_amount: plan.priceInCents,
+                unit_amount: plan.installmentPriceInCents,
+                recurring: {
+                  interval: "month",
+                },
               },
               quantity: 1,
             },
           ],
-          ...(plan.installments > 1
-            ? {
-                payment_method_options: {
-                  card: {
-                    installments: {
-                      enabled: true,
-                    },
-                  },
-                },
-              }
-            : {}),
           customer_email: user.email || undefined,
           client_reference_id: ctx.user.id.toString(),
           metadata: {
@@ -1840,6 +2000,19 @@ export const appRouter = router({
             installments: plan.installments.toString(),
             installment_price_in_cents: plan.installmentPriceInCents.toString(),
             price_in_cents: plan.priceInCents.toString(),
+            purchase_id: purchaseId.toString(),
+          },
+          subscription_data: {
+            metadata: {
+              user_id: ctx.user.id.toString(),
+              type: "plan",
+              plan_id: plan.id.toString(),
+              credits: plan.credits.toString(),
+              billing_installments: plan.installments.toString(),
+              installment_price_in_cents: plan.installmentPriceInCents.toString(),
+              price_in_cents: plan.priceInCents.toString(),
+              purchase_id: purchaseId.toString(),
+            },
           },
           success_url: `${origin}/success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${origin}/plans`,
@@ -1852,7 +2025,7 @@ export const appRouter = router({
           await dbInstance
             .update(purchases)
             .set({ stripeSessionId: session.id })
-            .where(eq(purchases.id, Number(purchaseResult[0].insertId)));
+            .where(eq(purchases.id, purchaseId));
         }
 
         return { url: session.url };

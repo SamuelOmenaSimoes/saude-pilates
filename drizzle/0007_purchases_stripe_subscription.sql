@@ -1,0 +1,1 @@
+ALTER TABLE `purchases` ADD `stripeSubscriptionId` varchar(255);

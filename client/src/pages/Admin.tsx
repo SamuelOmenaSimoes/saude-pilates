@@ -7,17 +7,40 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { useState } from "react";
+import { useState, useRef, useCallback, useLayoutEffect, useEffect } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { useEffect } from "react";
 import { useLocation } from "wouter";
-import { Users, Calendar, CreditCard, Search } from "lucide-react";
-import { formatPrice } from "@/lib/utils";
+import {
+  Users,
+  Calendar,
+  CreditCard,
+  Search,
+  Building2,
+  Package,
+  Plus,
+  Check,
+  type LucideIcon,
+} from "lucide-react";
+import { formatPrice, cn } from "@/lib/utils";
 import { maskCPF, maskPhone, validateCPF, validatePhone } from "@/lib/validators";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  tabsTriggerBaseClassName,
+} from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 
 function EditPatientForm({ user, onSuccess, onDelete }: { user: any, onSuccess: () => void, onDelete: () => void }) {
@@ -301,6 +324,851 @@ function BlockedTimeSlotsTab() {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function parseReaisToCents(s: string): number {
+  const t = s.trim().replace(/\s/g, "");
+  if (!t) return 0;
+  const normalized =
+    t.includes(",") && (!t.includes(".") || t.lastIndexOf(",") > t.lastIndexOf("."))
+      ? t.replace(/\./g, "").replace(",", ".")
+      : t.replace(",", ".");
+  const n = parseFloat(normalized);
+  if (Number.isNaN(n)) return 0;
+  return Math.round(n * 100);
+}
+
+function centsToReaisStr(cents: number): string {
+  return (cents / 100).toFixed(2).replace(".", ",");
+}
+
+function durationLabel(d: string) {
+  if (d === "monthly") return "Mensal";
+  if (d === "quarterly") return "Trimestral";
+  if (d === "semester") return "Semestral";
+  return d;
+}
+
+function AdminPlansTab() {
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  const emptyForm = () => ({
+    name: "",
+    description: "",
+    frequency: "2x" as "1x" | "2x" | "3x",
+    duration: "monthly" as "monthly" | "quarterly" | "semester",
+    totalClasses: "",
+    priceReais: "",
+    installments: "1",
+    installmentReais: "",
+    credits: "",
+    isActive: true,
+  });
+
+  const [create, setCreate] = useState(emptyForm);
+  const [edit, setEdit] = useState(emptyForm);
+
+  const { data: plans, isLoading, refetch } = trpc.admin.listAllPlansAdmin.useQuery();
+  const createPlan = trpc.admin.createPlan.useMutation({
+    onSuccess: () => {
+      toast.success("Plano criado");
+      refetch();
+      setCreate(emptyForm());
+      setShowCreate(false);
+    },
+    onError: (e) => toast.error(e.message || "Erro ao criar plano"),
+  });
+  const updatePlan = trpc.admin.updatePlan.useMutation({
+    onSuccess: () => {
+      toast.success("Plano atualizado");
+      refetch();
+      setEditingId(null);
+    },
+    onError: (e) => toast.error(e.message || "Erro ao atualizar plano"),
+  });
+
+  const startEdit = (p: any) => {
+    setEditingId(p.id);
+    setEdit({
+      name: p.name || "",
+      description: p.description || "",
+      frequency: p.frequency,
+      duration: p.duration,
+      totalClasses: String(p.totalClasses),
+      priceReais: centsToReaisStr(p.priceInCents),
+      installments: String(p.installments),
+      installmentReais: centsToReaisStr(p.installmentPriceInCents),
+      credits: String(p.credits),
+      isActive: p.isActive,
+    });
+  };
+
+  const submitCreate = () => {
+    const priceInCents = parseReaisToCents(create.priceReais);
+    const inst = Math.max(1, parseInt(create.installments, 10) || 1);
+    let installmentPriceInCents = parseReaisToCents(create.installmentReais);
+    if (installmentPriceInCents <= 0 && priceInCents > 0) {
+      installmentPriceInCents = Math.ceil(priceInCents / inst);
+    }
+    const totalClasses = parseInt(create.totalClasses, 10);
+    const credits = parseInt(create.credits, 10);
+    if (!create.name.trim() || !totalClasses || !credits || !priceInCents) {
+      toast.error("Preencha nome, aulas totais, créditos e preço válidos");
+      return;
+    }
+    createPlan.mutate({
+      name: create.name.trim(),
+      description: create.description.trim() || undefined,
+      frequency: create.frequency,
+      duration: create.duration,
+      totalClasses,
+      priceInCents,
+      installments: inst,
+      installmentPriceInCents: installmentPriceInCents || priceInCents,
+      credits,
+      isActive: create.isActive,
+    });
+  };
+
+  const submitEdit = () => {
+    if (!editingId) return;
+    const priceInCents = parseReaisToCents(edit.priceReais);
+    const inst = Math.max(1, parseInt(edit.installments, 10) || 1);
+    let installmentPriceInCents = parseReaisToCents(edit.installmentReais);
+    if (installmentPriceInCents <= 0 && priceInCents > 0) {
+      installmentPriceInCents = Math.ceil(priceInCents / inst);
+    }
+    const totalClasses = parseInt(edit.totalClasses, 10);
+    const credits = parseInt(edit.credits, 10);
+    if (!edit.name.trim() || !totalClasses || !credits || !priceInCents) {
+      toast.error("Preencha nome, aulas totais, créditos e preço válidos");
+      return;
+    }
+    updatePlan.mutate({
+      id: editingId,
+      name: edit.name.trim(),
+      description: edit.description.trim() || null,
+      frequency: edit.frequency,
+      duration: edit.duration,
+      totalClasses,
+      priceInCents,
+      installments: inst,
+      installmentPriceInCents: installmentPriceInCents || priceInCents,
+      credits,
+      isActive: edit.isActive,
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <div>
+            <CardTitle>Planos</CardTitle>
+            <CardDescription>Crie e edite planos exibidos em /plans e no checkout</CardDescription>
+          </div>
+          <Button variant={showCreate ? "secondary" : "default"} onClick={() => setShowCreate(!showCreate)}>
+            {showCreate ? "Cancelar" : "Novo plano"}
+          </Button>
+        </CardHeader>
+        {showCreate && (
+          <CardContent className="space-y-4 border-t pt-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2 md:col-span-2">
+                <Label>Nome</Label>
+                <Input value={create.name} onChange={(e) => setCreate({ ...create, name: e.target.value })} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Descrição</Label>
+                <Textarea
+                  value={create.description}
+                  onChange={(e) => setCreate({ ...create, description: e.target.value })}
+                  rows={2}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Frequência (semana)</Label>
+                <Select value={create.frequency} onValueChange={(v: "1x" | "2x" | "3x") => setCreate({ ...create, frequency: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1x">1x</SelectItem>
+                    <SelectItem value="2x">2x</SelectItem>
+                    <SelectItem value="3x">3x</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Duração</Label>
+                <Select
+                  value={create.duration}
+                  onValueChange={(v: "monthly" | "quarterly" | "semester") =>
+                    setCreate({ ...create, duration: v })
+                  }
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="monthly">Mensal</SelectItem>
+                    <SelectItem value="quarterly">Trimestral</SelectItem>
+                    <SelectItem value="semester">Semestral</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Total de aulas no período</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={create.totalClasses}
+                  onChange={(e) => setCreate({ ...create, totalClasses: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Créditos ao comprar</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={create.credits}
+                  onChange={(e) => setCreate({ ...create, credits: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Preço total (R$)</Label>
+                <Input
+                  placeholder="0,00"
+                  value={create.priceReais}
+                  onChange={(e) => setCreate({ ...create, priceReais: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Parcelas</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={create.installments}
+                  onChange={(e) => setCreate({ ...create, installments: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Valor da parcela (R$, opcional)</Label>
+                <Input
+                  placeholder="Automático se vazio"
+                  value={create.installmentReais}
+                  onChange={(e) => setCreate({ ...create, installmentReais: e.target.value })}
+                />
+              </div>
+              <div className="flex items-center gap-2 pt-6">
+                <Checkbox
+                  id="create-active"
+                  checked={create.isActive}
+                  onCheckedChange={(c) => setCreate({ ...create, isActive: c === true })}
+                />
+                <Label htmlFor="create-active" className="cursor-pointer">Plano ativo (visível no site)</Label>
+              </div>
+            </div>
+            <Button onClick={submitCreate} disabled={createPlan.isPending}>
+              {createPlan.isPending ? "Salvando..." : "Criar plano"}
+            </Button>
+          </CardContent>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Todos os planos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <p className="text-muted-foreground">Carregando...</p>
+          ) : (
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Freq.</TableHead>
+                    <TableHead>Duração</TableHead>
+                    <TableHead>Preço</TableHead>
+                    <TableHead>Créditos</TableHead>
+                    <TableHead>Ativo</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {plans && plans.length > 0 ? (
+                    plans.map((p: any) => (
+                      <TableRow key={p.id}>
+                        <TableCell className="font-medium">{p.name}</TableCell>
+                        <TableCell>{p.frequency}</TableCell>
+                        <TableCell>{durationLabel(p.duration)}</TableCell>
+                        <TableCell>{formatPrice(p.priceInCents)}</TableCell>
+                        <TableCell>{p.credits}</TableCell>
+                        <TableCell>{p.isActive ? "Sim" : "Não"}</TableCell>
+                        <TableCell>
+                          <Button size="sm" variant="outline" onClick={() => startEdit(p)}>
+                            Editar
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                        Nenhum plano cadastrado
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {editingId !== null && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle>Editar plano</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
+              Fechar
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2 md:col-span-2">
+                <Label>Nome</Label>
+                <Input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Descrição</Label>
+                <Textarea
+                  value={edit.description}
+                  onChange={(e) => setEdit({ ...edit, description: e.target.value })}
+                  rows={2}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Frequência</Label>
+                <Select value={edit.frequency} onValueChange={(v: "1x" | "2x" | "3x") => setEdit({ ...edit, frequency: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1x">1x</SelectItem>
+                    <SelectItem value="2x">2x</SelectItem>
+                    <SelectItem value="3x">3x</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Duração</Label>
+                <Select
+                  value={edit.duration}
+                  onValueChange={(v: "monthly" | "quarterly" | "semester") =>
+                    setEdit({ ...edit, duration: v })
+                  }
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="monthly">Mensal</SelectItem>
+                    <SelectItem value="quarterly">Trimestral</SelectItem>
+                    <SelectItem value="semester">Semestral</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Total de aulas</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={edit.totalClasses}
+                  onChange={(e) => setEdit({ ...edit, totalClasses: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Créditos</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={edit.credits}
+                  onChange={(e) => setEdit({ ...edit, credits: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Preço total (R$)</Label>
+                <Input
+                  value={edit.priceReais}
+                  onChange={(e) => setEdit({ ...edit, priceReais: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Parcelas</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={edit.installments}
+                  onChange={(e) => setEdit({ ...edit, installments: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Valor da parcela (R$)</Label>
+                <Input
+                  value={edit.installmentReais}
+                  onChange={(e) => setEdit({ ...edit, installmentReais: e.target.value })}
+                />
+              </div>
+              <div className="flex items-center gap-2 pt-6">
+                <Checkbox
+                  id="edit-active"
+                  checked={edit.isActive}
+                  onCheckedChange={(c) => setEdit({ ...edit, isActive: c === true })}
+                />
+                <Label htmlFor="edit-active" className="cursor-pointer">Plano ativo</Label>
+              </div>
+            </div>
+            <Button onClick={submitEdit} disabled={updatePlan.isPending}>
+              {updatePlan.isPending ? "Salvando..." : "Salvar alterações"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function AdminUnitCard({
+  unit,
+  onSaveUnit,
+  onCreateRoom,
+  onUpdateRoom,
+  createRoomPending,
+  updateRoomPending,
+}: {
+  unit: { id: number; name: string; address: string; rooms: any[] };
+  onSaveUnit: (id: number, name: string, address: string) => void;
+  onCreateRoom: (input: {
+    unitId: number;
+    name: string;
+    maxCapacity: number;
+    isGroupOnly: boolean;
+  }) => void;
+  onUpdateRoom: (
+    input: { id: number; name: string; maxCapacity: number; isGroupOnly: boolean },
+    onSuccess?: () => void,
+  ) => void;
+  createRoomPending: boolean;
+  updateRoomPending: boolean;
+}) {
+  const [uName, setUName] = useState(unit.name);
+  const [uAddr, setUAddr] = useState(unit.address);
+  const [newRoom, setNewRoom] = useState({ name: "", maxCapacity: "4", isGroupOnly: true });
+  const [editingRoomId, setEditingRoomId] = useState<number | null>(null);
+  const [editRoom, setEditRoom] = useState({ name: "", maxCapacity: "", isGroupOnly: true });
+
+  useEffect(() => {
+    setUName(unit.name);
+    setUAddr(unit.address);
+  }, [unit.name, unit.address]);
+
+  const handleCreateRoom = () => {
+    if (!newRoom.name.trim()) {
+      toast.error("Informe o nome da sala");
+      return;
+    }
+    const cap = parseInt(newRoom.maxCapacity || "4", 10);
+    onCreateRoom({
+      unitId: unit.id,
+      name: newRoom.name.trim(),
+      maxCapacity: cap > 0 ? cap : 4,
+      isGroupOnly: newRoom.isGroupOnly,
+    });
+    setNewRoom({ name: "", maxCapacity: "4", isGroupOnly: true });
+  };
+
+  const startEditRoom = (room: { id: number; name: string; maxCapacity: number; isGroupOnly: boolean }) => {
+    setEditingRoomId(room.id);
+    setEditRoom({
+      name: room.name,
+      maxCapacity: String(room.maxCapacity),
+      isGroupOnly: room.isGroupOnly,
+    });
+  };
+
+  const saveEditRoom = (roomId: number) => {
+    const cap = parseInt(editRoom.maxCapacity, 10);
+    onUpdateRoom(
+      {
+        id: roomId,
+        name: editRoom.name.trim(),
+        maxCapacity: cap > 0 ? cap : 1,
+        isGroupOnly: editRoom.isGroupOnly,
+      },
+      () => setEditingRoomId(null),
+    );
+  };
+
+  return (
+    <div className="rounded-lg border bg-muted/20 p-6 space-y-6">
+      <h3 className="text-lg font-semibold">Unidade: {unit.name}</h3>
+      <div className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2 md:col-span-2">
+            <Label>Nome</Label>
+            <Input value={uName} onChange={(e) => setUName(e.target.value)} />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label>Endereço</Label>
+            <Textarea value={uAddr} onChange={(e) => setUAddr(e.target.value)} rows={2} />
+          </div>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => onSaveUnit(unit.id, uName, uAddr)}
+        >
+          Salvar unidade
+        </Button>
+
+        <div>
+          <h4 className="font-medium mb-3">Salas</h4>
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Capacidade</TableHead>
+                  <TableHead>Grupo</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {unit.rooms?.length ? (
+                  unit.rooms.map((room: any) => (
+                    <TableRow key={room.id}>
+                      {editingRoomId === room.id ? (
+                        <>
+                          <TableCell>
+                            <Input
+                              value={editRoom.name}
+                              onChange={(e) => setEditRoom({ ...editRoom, name: e.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              min={1}
+                              className="w-20"
+                              value={editRoom.maxCapacity}
+                              onChange={(e) => setEditRoom({ ...editRoom, maxCapacity: e.target.value })}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Checkbox
+                              checked={editRoom.isGroupOnly}
+                              onCheckedChange={(c) =>
+                                setEditRoom({ ...editRoom, isGroupOnly: c === true })
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="space-x-2">
+                            <Button size="sm" onClick={() => saveEditRoom(room.id)} disabled={updateRoomPending}>
+                              Salvar
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setEditingRoomId(null)}>
+                              Cancelar
+                            </Button>
+                          </TableCell>
+                        </>
+                      ) : (
+                        <>
+                          <TableCell>{room.name}</TableCell>
+                          <TableCell>{room.maxCapacity}</TableCell>
+                          <TableCell>{room.isGroupOnly ? "Sim" : "Não"}</TableCell>
+                          <TableCell>
+                            <Button size="sm" variant="outline" onClick={() => startEditRoom(room)}>
+                              Editar
+                            </Button>
+                          </TableCell>
+                        </>
+                      )}
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-muted-foreground text-center py-4">
+                      Nenhuma sala nesta unidade
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2 items-end">
+            <div className="space-y-1">
+              <Label className="text-xs">Nova sala</Label>
+              <Input
+                placeholder="Nome"
+                value={newRoom.name}
+                onChange={(e) => setNewRoom({ ...newRoom, name: e.target.value })}
+                className="w-40"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Cap.</Label>
+              <Input
+                type="number"
+                min={1}
+                className="w-16"
+                value={newRoom.maxCapacity}
+                onChange={(e) => setNewRoom({ ...newRoom, maxCapacity: e.target.value })}
+              />
+            </div>
+            <div className="flex items-center gap-2 pb-2">
+              <Checkbox
+                id={`g-${unit.id}`}
+                checked={newRoom.isGroupOnly}
+                onCheckedChange={(c) => setNewRoom({ ...newRoom, isGroupOnly: c === true })}
+              />
+              <Label htmlFor={`g-${unit.id}`} className="text-xs">Só grupo</Label>
+            </div>
+            <Button size="sm" onClick={handleCreateRoom} disabled={createRoomPending}>
+              Adicionar sala
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const emptyNewUnitForm = () => ({
+  name: "",
+  address: "",
+  roomName: "",
+  roomMaxCapacity: "4",
+  roomIsGroupOnly: true,
+});
+
+function AdminUnitsTab() {
+  const { data: unitsWithRooms, isLoading, refetch } = trpc.admin.listUnitsWithRooms.useQuery();
+  const createUnit = trpc.admin.createUnit.useMutation();
+  const createRoom = trpc.admin.createRoom.useMutation({
+    onSuccess: () => refetch(),
+    onError: (e) => toast.error(e.message || "Erro ao criar sala"),
+  });
+  const updateUnit = trpc.admin.updateUnit.useMutation({
+    onSuccess: () => {
+      toast.success("Unidade atualizada");
+      refetch();
+    },
+    onError: (e) => toast.error(e.message || "Erro ao atualizar unidade"),
+  });
+  const updateRoom = trpc.admin.updateRoom.useMutation({
+    onSuccess: () => {
+      toast.success("Sala atualizada");
+      refetch();
+    },
+    onError: (e) => toast.error(e.message || "Erro ao atualizar sala"),
+  });
+
+  const [newUnit, setNewUnit] = useState(emptyNewUnitForm);
+  const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (
+      selectedUnitId != null &&
+      unitsWithRooms &&
+      !unitsWithRooms.some((u) => u.id === selectedUnitId)
+    ) {
+      setSelectedUnitId(null);
+    }
+  }, [selectedUnitId, unitsWithRooms]);
+
+  const selectedUnit = unitsWithRooms?.find((u) => u.id === selectedUnitId);
+
+  const handleCreateUnit = async () => {
+    if (!newUnit.name.trim() || !newUnit.address.trim()) {
+      toast.error("Nome e endereço são obrigatórios");
+      return;
+    }
+    if (!newUnit.roomName.trim()) {
+      toast.error("Informe o nome da primeira sala");
+      return;
+    }
+    try {
+      const { id } = await createUnit.mutateAsync({
+        name: newUnit.name.trim(),
+        address: newUnit.address.trim(),
+      });
+      const cap = parseInt(newUnit.roomMaxCapacity || "4", 10);
+      await createRoom.mutateAsync({
+        unitId: id,
+        name: newUnit.roomName.trim(),
+        maxCapacity: cap > 0 ? cap : 4,
+        isGroupOnly: newUnit.roomIsGroupOnly,
+      });
+      toast.success("Unidade e primeira sala criadas");
+      setNewUnit(emptyNewUnitForm());
+      setSelectedUnitId(id);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Erro ao criar unidade ou sala";
+      toast.error(msg);
+    }
+  };
+
+  const handleSaveUnit = (id: number, name: string, address: string) => {
+    if (!name.trim() || !address.trim()) {
+      toast.error("Nome e endereço são obrigatórios");
+      return;
+    }
+    updateUnit.mutate({ id, name: name.trim(), address: address.trim() });
+  };
+
+  const createBusy = createUnit.isPending || createRoom.isPending;
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Nova unidade</CardTitle>
+          <CardDescription>
+            Crie a unidade junto com a primeira sala (obrigatória para agendamentos)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6 max-w-2xl">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2 md:col-span-2">
+              <Label>Nome da unidade</Label>
+              <Input
+                value={newUnit.name}
+                onChange={(e) => setNewUnit({ ...newUnit, name: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Endereço</Label>
+              <Textarea
+                value={newUnit.address}
+                onChange={(e) => setNewUnit({ ...newUnit, address: e.target.value })}
+                rows={2}
+              />
+            </div>
+          </div>
+          <div className="rounded-lg border bg-muted/30 p-4 space-y-4">
+            <p className="text-sm font-medium">Primeira sala</p>
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="space-y-2 min-w-[10rem] flex-1">
+                <Label>Nome da sala</Label>
+                <Input
+                  placeholder="Ex.: Sala 1"
+                  value={newUnit.roomName}
+                  onChange={(e) => setNewUnit({ ...newUnit, roomName: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2 w-24">
+                <Label>Capacidade</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={newUnit.roomMaxCapacity}
+                  onChange={(e) => setNewUnit({ ...newUnit, roomMaxCapacity: e.target.value })}
+                />
+              </div>
+              <div className="flex items-center gap-2 pb-2">
+                <Checkbox
+                  id="new-unit-room-group"
+                  checked={newUnit.roomIsGroupOnly}
+                  onCheckedChange={(c) =>
+                    setNewUnit({ ...newUnit, roomIsGroupOnly: c === true })
+                  }
+                />
+                <Label htmlFor="new-unit-room-group" className="text-sm font-normal cursor-pointer">
+                  Só grupo
+                </Label>
+              </div>
+            </div>
+          </div>
+          <Button onClick={handleCreateUnit} disabled={createBusy}>
+            {createBusy ? "Salvando..." : "Criar unidade e primeira sala"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {isLoading ? (
+        <p className="text-muted-foreground">Carregando...</p>
+      ) : unitsWithRooms && unitsWithRooms.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Editar unidade</CardTitle>
+            <CardDescription>
+              Escolha uma unidade para ver salas e editar dados
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4 max-w-xl">
+              <div className="space-y-2 flex-1 min-w-0">
+                <Label>Unidade</Label>
+                <Select
+                  value={selectedUnitId != null ? String(selectedUnitId) : "none"}
+                  onValueChange={(v) =>
+                    setSelectedUnitId(v === "none" ? null : Number(v))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione uma unidade..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Selecione...</SelectItem>
+                    {unitsWithRooms.map((u: { id: number; name: string }) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {selectedUnitId != null && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="sm:mt-6 shrink-0"
+                  onClick={() => setSelectedUnitId(null)}
+                >
+                  Limpar seleção
+                </Button>
+              )}
+            </div>
+
+            {selectedUnit && (
+              <AdminUnitCard
+                unit={selectedUnit}
+                onSaveUnit={handleSaveUnit}
+                onCreateRoom={(input) =>
+                  createRoom.mutate(input, {
+                    onSuccess: () => toast.success("Sala criada"),
+                  })
+                }
+                onUpdateRoom={(input, onSuccess) =>
+                  updateRoom.mutate(
+                    {
+                      id: input.id,
+                      name: input.name,
+                      maxCapacity: input.maxCapacity,
+                      isGroupOnly: input.isGroupOnly,
+                    },
+                    { onSuccess },
+                  )
+                }
+                createRoomPending={createRoom.isPending}
+                updateRoomPending={updateRoom.isPending}
+              />
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <p className="text-muted-foreground text-center py-6 rounded-lg border border-dashed">
+          Nenhuma unidade cadastrada ainda — use o formulário acima
+        </p>
+      )}
     </div>
   );
 }
@@ -1187,11 +2055,204 @@ function MetricsTab() {
   );
 }
 
+const ADMIN_TABS: { value: string; label: string; icon: LucideIcon }[] = [
+  { value: "patients", label: "Pacientes", icon: Users },
+  { value: "plans", label: "Planos", icon: Package },
+  { value: "units", label: "Unidades", icon: Building2 },
+  { value: "appointments", label: "Agendamentos", icon: Calendar },
+  { value: "today", label: "Hoje", icon: Calendar },
+  { value: "metrics", label: "Métricas", icon: CreditCard },
+  { value: "migration", label: "Migração", icon: Users },
+  { value: "payments", label: "Pagamentos", icon: CreditCard },
+  { value: "recurring", label: "Recorrentes", icon: Calendar },
+  { value: "blocked", label: "Bloqueados", icon: Calendar },
+  { value: "import", label: "Importar", icon: Calendar },
+];
+
+/** Fits as many tab triggers as the row width allows; overflow goes under "+". */
+function AdminResponsiveTabRow({
+  value,
+  onTabChange,
+}: {
+  value: string;
+  onTabChange: (v: string) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const measureInnerRef = useRef<HTMLDivElement>(null);
+  const tabMeasureEls = useRef<(HTMLButtonElement | null)[]>([]);
+  const plusMeasureWrapRef = useRef<HTMLDivElement>(null);
+  const [visibleCount, setVisibleCount] = useState(ADMIN_TABS.length);
+
+  const recalc = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const cw = container.clientWidth;
+    if (cw < 48) return;
+
+    const gapPx = (() => {
+      const inner = measureInnerRef.current;
+      if (!inner) return 4;
+      const g = getComputedStyle(inner).columnGap || getComputedStyle(inner).gap;
+      const n = parseFloat(g);
+      return Number.isFinite(n) ? n : 4;
+    })();
+
+    const betweenListAndPlus = 8;
+
+    const widths = ADMIN_TABS.map((_, i) => {
+      const el = tabMeasureEls.current[i];
+      return el?.getBoundingClientRect().width ?? 56;
+    });
+
+    const plusW = plusMeasureWrapRef.current?.getBoundingClientRect().width ?? 56;
+
+    const nTabs = ADMIN_TABS.length;
+    for (let k = nTabs; k >= 1; k--) {
+      const tabsOnly =
+        widths.slice(0, k).reduce((a, b) => a + b, 0) + gapPx * Math.max(0, k - 1);
+      const needOverflow = k < nTabs;
+      const total = tabsOnly + (needOverflow ? betweenListAndPlus + plusW : 0);
+      if (total <= cw) {
+        setVisibleCount(k);
+        return;
+      }
+    }
+    setVisibleCount(1);
+  }, []);
+
+  useLayoutEffect(() => {
+    recalc();
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => recalc());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [recalc]);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 640px)");
+    const onBp = () => recalc();
+    mq.addEventListener("change", onBp);
+    return () => mq.removeEventListener("change", onBp);
+  }, [recalc]);
+
+  useEffect(() => {
+    if (typeof document !== "undefined" && document.fonts?.ready) {
+      void document.fonts.ready.then(() => recalc());
+    }
+  }, [recalc]);
+
+  const visibleTabs = ADMIN_TABS.slice(0, visibleCount);
+  const overflowTabs = ADMIN_TABS.slice(visibleCount);
+  const overflowHasActive = overflowTabs.some((t) => t.value === value);
+
+  return (
+    <div ref={containerRef} className="relative w-full max-w-6xl">
+      <div
+        className="pointer-events-none absolute left-0 top-0 -z-10 flex w-max gap-2 opacity-0"
+        aria-hidden
+      >
+        <div
+          ref={measureInnerRef}
+          className="inline-flex gap-0.5 rounded-lg bg-muted p-[3px] sm:gap-1"
+        >
+          {ADMIN_TABS.map((tab, i) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                tabIndex={-1}
+                ref={(el) => {
+                  tabMeasureEls.current[i] = el;
+                }}
+                className={cn(
+                  tabsTriggerBaseClassName,
+                  "shrink-0 px-2 text-xs sm:px-3 sm:text-sm",
+                )}
+              >
+                <Icon className="h-4 w-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div ref={plusMeasureWrapRef}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0 gap-1 border-dashed px-2.5"
+            type="button"
+            tabIndex={-1}
+          >
+            <Plus className="h-4 w-4" />
+            <span className="tabular-nums">+{ADMIN_TABS.length - 1}</span>
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex w-full flex-nowrap items-center gap-2">
+        <TabsList className="inline-flex h-auto min-h-9 min-w-0 flex-1 flex-nowrap items-center justify-start gap-0.5 overflow-hidden rounded-lg p-[3px] sm:gap-1">
+          {visibleTabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <TabsTrigger
+                key={tab.value}
+                value={tab.value}
+                className="shrink-0 px-2 text-xs sm:px-3 sm:text-sm"
+              >
+                <Icon className="h-4 w-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">{tab.label}</span>
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+        {overflowTabs.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant={overflowHasActive ? "secondary" : "outline"}
+                size="sm"
+                className="h-9 shrink-0 gap-1 border-dashed px-2.5"
+                aria-label={`Abrir lista com mais ${overflowTabs.length} seções`}
+              >
+                <Plus className="h-4 w-4" />
+                <span className="tabular-nums">+{overflowTabs.length}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[12rem]">
+              {overflowTabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = value === tab.value;
+                return (
+                  <DropdownMenuItem
+                    key={tab.value}
+                    onClick={() => onTabChange(tab.value)}
+                    className={cn(isActive && "bg-accent")}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="flex-1">{tab.label}</span>
+                    {isActive ? (
+                      <Check className="h-4 w-4 shrink-0 opacity-80" />
+                    ) : null}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Admin() {
   const { user, loading } = useAuth();
   const [, setLocation] = useLocation();
   
   // TODOS os hooks devem vir ANTES de qualquer return
+  const [adminTab, setAdminTab] = useState("patients");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<number>();
   const [creditAmount, setCreditAmount] = useState("");
@@ -1311,45 +2372,18 @@ export default function Admin() {
             <p className="text-muted-foreground">Gerencie pacientes, agendamentos e créditos</p>
           </div>
 
-          <Tabs defaultValue="patients" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-9 max-w-6xl gap-1">
-              <TabsTrigger value="patients" className="text-xs sm:text-sm px-2">
-                <Users className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Pacientes</span>
-              </TabsTrigger>
-              <TabsTrigger value="appointments" className="text-xs sm:text-sm px-2">
-                <Calendar className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Agendamentos</span>
-              </TabsTrigger>
-              <TabsTrigger value="today" className="text-xs sm:text-sm px-2">
-                <Calendar className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Hoje</span>
-              </TabsTrigger>
-              <TabsTrigger value="metrics" className="text-xs sm:text-sm px-2">
-                <CreditCard className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Métricas</span>
-              </TabsTrigger>
-              <TabsTrigger value="migration" className="text-xs sm:text-sm px-2">
-                <Users className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Migração</span>
-              </TabsTrigger>
-              <TabsTrigger value="payments" className="text-xs sm:text-sm px-2">
-                <CreditCard className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Pagamentos</span>
-              </TabsTrigger>
-              <TabsTrigger value="recurring" className="text-xs sm:text-sm px-2">
-                <Calendar className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Recorrentes</span>
-              </TabsTrigger>
-              <TabsTrigger value="blocked" className="text-xs sm:text-sm px-2">
-                <Calendar className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Bloqueados</span>
-              </TabsTrigger>
-              <TabsTrigger value="import" className="text-xs sm:text-sm px-2">
-                <Calendar className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Importar</span>
-              </TabsTrigger>
-            </TabsList>
+          <Tabs value={adminTab} onValueChange={setAdminTab} className="space-y-6">
+            <AdminResponsiveTabRow value={adminTab} onTabChange={setAdminTab} />
+
+            {/* Tab: Planos */}
+            <TabsContent value="plans" className="space-y-6">
+              <AdminPlansTab />
+            </TabsContent>
+
+            {/* Tab: Unidades */}
+            <TabsContent value="units" className="space-y-6">
+              <AdminUnitsTab />
+            </TabsContent>
 
             {/* Tab: Pacientes */}
             <TabsContent value="patients" className="space-y-6">

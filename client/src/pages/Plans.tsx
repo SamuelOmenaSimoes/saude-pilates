@@ -8,6 +8,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import { formatPrice } from "@/lib/utils";
 
 export default function Plans() {
   const { data: plans, isLoading } = trpc.plans.list.useQuery();
@@ -98,7 +99,9 @@ export default function Plans() {
 
                 <div className="grid gap-8 md:grid-cols-3">
                   {frequencyPlans.map((plan) => {
-                    const pricePerClass = plan.priceInCents / plan.totalClasses;
+                    const pricePerClassCents = Math.round(
+                      plan.priceInCents / plan.totalClasses,
+                    );
                     const isPopular = plan.duration === "semester";
 
                     return (
@@ -128,6 +131,12 @@ export default function Plans() {
                               {plan.totalClasses}
                             </div>
                             <p className="text-lg font-medium">aulas</p>
+                            <p className="mt-3 text-2xl font-bold text-primary">
+                              {formatPrice(pricePerClassCents)}
+                              <span className="ml-1 text-base font-medium text-muted-foreground">
+                                por aula
+                              </span>
+                            </p>
                             <p className="mt-2 text-sm text-muted-foreground">
                               {plan.description}
                             </p>

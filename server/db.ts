@@ -12,7 +12,9 @@ import {
   purchases,
   operatingHours,
   InsertUnit,
+  Unit,
   InsertRoom,
+  Room,
   InsertProfessional,
   InsertPlan,
   InsertAppointment,
@@ -275,7 +277,11 @@ export async function createUnit(unit: InsertUnit) {
   if (!db) throw new Error("Database not available");
 
   const result = await db.insert(units).values(unit);
-  return result;
+  const insertId = result[0]?.insertId;
+  if (!insertId) {
+    throw new Error("Failed to create unit: no insert id");
+  }
+  return Number(insertId);
 }
 
 // ==================== ROOM OPERATIONS ====================
@@ -373,6 +379,62 @@ export async function createPlan(plan: InsertPlan) {
 
   const result = await db.insert(plans).values(plan);
   return result;
+}
+
+export async function getAllPlansIncludingInactive() {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db.select().from(plans).orderBy(desc(plans.id));
+}
+
+export async function updatePlan(
+  planId: number,
+  data: Partial<Omit<InsertPlan, "id" | "createdAt">>,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.update(plans).set(data).where(eq(plans.id, planId));
+}
+
+export async function updateUnit(
+  unitId: number,
+  data: Partial<Pick<InsertUnit, "name" | "address">>,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.update(units).set(data).where(eq(units.id, unitId));
+}
+
+export async function updateRoom(
+  roomId: number,
+  data: Partial<
+    Pick<InsertRoom, "unitId" | "name" | "maxCapacity" | "isGroupOnly">
+  >,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.update(rooms).set(data).where(eq(rooms.id, roomId));
+}
+
+export async function getAllUnitsWithRooms() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const allUnits = await db.select().from(units).orderBy(asc(units.name));
+  const out: (Unit & { rooms: Room[] })[] = [];
+  for (const u of allUnits) {
+    const roomList = await db
+      .select()
+      .from(rooms)
+      .where(eq(rooms.unitId, u.id))
+      .orderBy(asc(rooms.name));
+    out.push({ ...u, rooms: roomList });
+  }
+  return out;
 }
 
 // ==================== APPOINTMENT OPERATIONS ====================
@@ -633,6 +695,28 @@ export async function updatePurchaseStatus(
   const updateData: any = { status };
   if (paymentIntentId) {
     updateData.stripePaymentIntentId = paymentIntentId;
+  }
+
+  await db
+    .update(purchases)
+    .set(updateData)
+    .where(eq(purchases.id, purchaseId));
+}
+
+export async function updatePurchaseSubscription(
+  purchaseId: number,
+  stripeSubscriptionId: string,
+  stripePaymentIntentId?: string,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const updateData: {
+    stripeSubscriptionId: string;
+    stripePaymentIntentId?: string;
+  } = { stripeSubscriptionId };
+  if (stripePaymentIntentId) {
+    updateData.stripePaymentIntentId = stripePaymentIntentId;
   }
 
   await db
