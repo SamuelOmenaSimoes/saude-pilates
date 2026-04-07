@@ -162,11 +162,23 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       typeof session.subscription === "string"
         ? session.subscription
         : session.subscription.id;
-    const sub = await stripe.subscriptions.retrieve(subscriptionId, {
-      expand: ["latest_invoice.payments.data.payment.payment_intent"],
-    });
-    const inv = sub.latest_invoice;
-    if (inv && typeof inv !== "string") {
+  }
+
+  // Subscription checkouts have `payment_intent` null on the session; PI lives on the invoice.
+  // Do not use subscription expand `latest_invoice.payments.data.payment.payment_intent` — that
+  // exceeds Stripe's max expand depth (4) and makes subscriptions.retrieve fail.
+  if (!paymentIntentId && session.mode === "subscription") {
+    const invoiceRef = session.invoice;
+    const invoiceId =
+      typeof invoiceRef === "string"
+        ? invoiceRef
+        : invoiceRef && typeof invoiceRef === "object"
+          ? invoiceRef.id
+          : undefined;
+    if (invoiceId) {
+      const inv = await stripe.invoices.retrieve(invoiceId, {
+        expand: ["payments.data.payment.payment_intent"],
+      });
       const firstPayment = inv.payments?.data?.[0];
       const pi = firstPayment?.payment?.payment_intent;
       if (pi) {
