@@ -7,8 +7,8 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { useState, useRef, useCallback, useLayoutEffect, useEffect } from "react";
-import { format } from "date-fns";
+import { useState, useRef, useCallback, useLayoutEffect, useEffect, useMemo } from "react";
+import { format, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
@@ -24,6 +24,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { formatPrice, cn } from "@/lib/utils";
+
+/** Parse YYYY-MM-DD from a date input as local calendar date (avoids UTC off-by-one). */
+function parseLocalDateInput(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
 import { maskCPF, maskPhone, validateCPF, validatePhone } from "@/lib/validators";
 import {
   Tabs,
@@ -2257,10 +2263,60 @@ export default function Admin() {
   const [selectedUserId, setSelectedUserId] = useState<number>();
   const [creditAmount, setCreditAmount] = useState("");
   const [creditReason, setCreditReason] = useState("");
+  const [appointmentStartDate, setAppointmentStartDate] = useState("");
+  const [appointmentEndDate, setAppointmentEndDate] = useState("");
+  const [appointmentStatusFilter, setAppointmentStatusFilter] = useState<
+    "all" | "scheduled" | "completed" | "cancelled" | "no-show"
+  >("all");
+
+  const appointmentListInput = useMemo(() => {
+    const input: {
+      startDate?: Date;
+      endDate?: Date;
+      status?: "scheduled" | "completed" | "cancelled" | "no-show";
+    } = {};
+    if (appointmentStartDate) {
+      input.startDate = startOfDay(parseLocalDateInput(appointmentStartDate));
+    }
+    if (appointmentEndDate) {
+      input.endDate = endOfDay(parseLocalDateInput(appointmentEndDate));
+    }
+    if (appointmentStatusFilter !== "all") {
+      input.status = appointmentStatusFilter;
+    }
+    return input;
+  }, [appointmentStartDate, appointmentEndDate, appointmentStatusFilter]);
+
+  const todayCalendarKey = format(new Date(), "yyyy-MM-dd");
+  const todayRange = useMemo(() => {
+    const now = new Date();
+    return {
+      startDate: startOfDay(now),
+      endDate: endOfDay(now),
+    };
+  }, [todayCalendarKey]);
 
   // Buscar todos os usuários automaticamente
   const { data: allUsers, refetch: refetchUsers } = trpc.admin.listAllUsers.useQuery();
-  const { data: allAppointments, refetch: refetchAppointments } = trpc.appointments.adminList.useQuery({});
+  const {
+    data: allAppointments,
+    refetch: refetchAppointments,
+    isFetching: isFetchingAppointmentsList,
+  } = trpc.appointments.listAll.useQuery(appointmentListInput);
+  const {
+    data: todayAppointmentsData,
+    refetch: refetchTodayAppointments,
+    isFetching: isFetchingTodayAppointments,
+  } = trpc.appointments.listAll.useQuery({
+    startDate: todayRange.startDate,
+    endDate: todayRange.endDate,
+    status: "scheduled",
+  });
+
+  const refetchAppointmentData = useCallback(() => {
+    void refetchAppointments();
+    void refetchTodayAppointments();
+  }, [refetchAppointments, refetchTodayAppointments]);
   
   const { data: selectedUserDetails, refetch: refetchUserDetails } = trpc.admin.getUserDetails.useQuery(
     { userId: selectedUserId! },
@@ -2346,7 +2402,7 @@ export default function Admin() {
     try {
       await cancelAppointmentMutation.mutateAsync({ appointmentId, refundCredit });
       toast.success("Agendamento cancelado");
-      refetchAppointments();
+      refetchAppointmentData();
       if (selectedUserId) {
         refetchUserDetails();
       }
@@ -2355,11 +2411,7 @@ export default function Admin() {
     }
   };
 
-  const todayAppointments = allAppointments?.filter((apt: any) => {
-    const aptDate = new Date(apt.appointmentDate);
-    const today = new Date();
-    return aptDate.toDateString() === today.toDateString() && apt.status === 'scheduled';
-  }) || [];
+  const todayAppointments = todayAppointmentsData ?? [];
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -2570,24 +2622,107 @@ export default function Admin() {
             {/* Tab: Todos os Agendamentos */}
             <TabsContent value="appointments">
               <Card>
-                <CardHeader>
-                  <CardTitle>Todos os Agendamentos</CardTitle>
+                <CardHeader className="space-y-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <CardTitle>Todos os Agendamentos</CardTitle>
+                    <p className="text-sm text-muted-foreground tabular-nums">
+                      {isFetchingAppointmentsList
+                        ? "Carregando…"
+                        : `${allAppointments?.length ?? 0} resultado(s)`}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-4 rounded-lg border bg-muted/30 p-4 sm:flex-row sm:flex-wrap sm:items-end">
+                    <div className="grid flex-1 gap-4 sm:min-w-[10rem] sm:max-w-[14rem]">
+                      <Label htmlFor="apt-filter-start">Data inicial</Label>
+                      <Input
+                        id="apt-filter-start"
+                        type="date"
+                        value={appointmentStartDate}
+                        onChange={(e) => setAppointmentStartDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid flex-1 gap-4 sm:min-w-[10rem] sm:max-w-[14rem]">
+                      <Label htmlFor="apt-filter-end">Data final</Label>
+                      <Input
+                        id="apt-filter-end"
+                        type="date"
+                        value={appointmentEndDate}
+                        onChange={(e) => setAppointmentEndDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="grid flex-1 gap-4 sm:min-w-[12rem] sm:max-w-[16rem]">
+                      <Label htmlFor="apt-filter-status">Status</Label>
+                      <Select
+                        value={appointmentStatusFilter}
+                        onValueChange={(v) =>
+                          setAppointmentStatusFilter(
+                            v as "all" | "scheduled" | "completed" | "cancelled" | "no-show",
+                          )
+                        }
+                      >
+                        <SelectTrigger id="apt-filter-status">
+                          <SelectValue placeholder="Todos" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todos</SelectItem>
+                          <SelectItem value="scheduled">Agendado</SelectItem>
+                          <SelectItem value="completed">Concluído</SelectItem>
+                          <SelectItem value="cancelled">Cancelado</SelectItem>
+                          <SelectItem value="no-show">Falta (no-show)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full sm:w-auto"
+                      onClick={() => {
+                        setAppointmentStartDate("");
+                        setAppointmentEndDate("");
+                        setAppointmentStatusFilter("all");
+                      }}
+                    >
+                      Limpar filtros
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {allAppointments && allAppointments.length > 0 ? (
-                      allAppointments.slice(0, 20).map((apt: any) => (
+                    {isFetchingAppointmentsList ? (
+                      <div className="flex flex-col items-center justify-center gap-3 py-16">
+                        <div
+                          className="h-10 w-10 animate-spin rounded-full border-2 border-primary border-t-transparent"
+                          aria-hidden
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          Carregando agendamentos…
+                        </p>
+                      </div>
+                    ) : allAppointments && allAppointments.length > 0 ? (
+                      allAppointments.map((apt: any) => (
                         <div key={apt.id} className="p-4 border rounded-lg hover:bg-muted/30 transition-smooth">
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
                                 <p className="font-bold text-lg">{apt.user?.name || 'Usuário'}</p>
-                                <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                                  apt.status === 'scheduled' ? 'bg-green-100 text-green-700' : 
-                                  apt.status === 'completed' ? 'bg-blue-100 text-blue-700' : 
-                                  'bg-red-100 text-red-700'
-                                }`}>
-                                  {apt.status === 'scheduled' ? 'Agendado' : apt.status === 'completed' ? 'Concluído' : 'Cancelado'}
+                                <span
+                                  className={`text-xs px-2 py-1 rounded-full font-medium ${
+                                    apt.status === "scheduled"
+                                      ? "bg-green-100 text-green-700"
+                                      : apt.status === "completed"
+                                        ? "bg-blue-100 text-blue-700"
+                                        : apt.status === "no-show"
+                                          ? "bg-amber-100 text-amber-800"
+                                          : "bg-red-100 text-red-700"
+                                  }`}
+                                >
+                                  {apt.status === "scheduled"
+                                    ? "Agendado"
+                                    : apt.status === "completed"
+                                      ? "Concluído"
+                                      : apt.status === "no-show"
+                                        ? "Falta"
+                                        : "Cancelado"}
                                 </span>
                               </div>
                               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-muted-foreground mt-2">
@@ -2634,11 +2769,26 @@ export default function Admin() {
             <TabsContent value="today">
               <Card>
                 <CardHeader>
-                  <CardTitle>Aulas de Hoje ({todayAppointments.length})</CardTitle>
+                  <CardTitle>
+                    Aulas de Hoje
+                    {isFetchingTodayAppointments
+                      ? " (…)"
+                      : ` (${todayAppointments.length})`}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {todayAppointments.length > 0 ? (
+                    {isFetchingTodayAppointments ? (
+                      <div className="flex flex-col items-center justify-center gap-3 py-16">
+                        <div
+                          className="h-10 w-10 animate-spin rounded-full border-2 border-primary border-t-transparent"
+                          aria-hidden
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          Carregando aulas de hoje…
+                        </p>
+                      </div>
+                    ) : todayAppointments.length > 0 ? (
                       todayAppointments.map((apt: any) => (
                         <div key={apt.id} className="flex items-center justify-between p-4 border rounded-lg bg-primary/5">
                           <div className="flex-1">
@@ -2683,7 +2833,7 @@ export default function Admin() {
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <MigrationTab allUsers={allUsers || []} refetchAppointments={refetchAppointments} />
+                  <MigrationTab allUsers={allUsers || []} refetchAppointments={refetchAppointmentData} />
                 </CardContent>
               </Card>
             </TabsContent>
