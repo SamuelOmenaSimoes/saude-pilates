@@ -57,6 +57,27 @@
       "when": 1775166651084,
       "tag": "0007_purchases_stripe_subscription",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1775166651085,
+      "tag": "0008_plan_units",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1775166651086,
+      "tag": "0009_units_plans_deleted_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1775166651087,
+      "tag": "0010_plan_units_deleted_at",
+      "breakpoints": true
     }
   ]
 }

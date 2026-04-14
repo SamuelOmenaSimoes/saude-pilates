@@ -1,4 +1,17 @@
-import { eq, and, gte, lte, lt, desc, asc, sql } from "drizzle-orm";
+import {
+  eq,
+  and,
+  gte,
+  lte,
+  lt,
+  desc,
+  asc,
+  sql,
+  inArray,
+  notInArray,
+  isNull,
+  isNotNull,
+} from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -7,6 +20,7 @@ import {
   rooms,
   professionals,
   plans,
+  planUnits,
   appointments,
   creditTransactions,
   purchases,
@@ -22,7 +36,80 @@ import {
   InsertPurchase,
   InsertOperatingHour,
 } from "../drizzle/schema";
+import type { Plan } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+
+export type PlanWithUnits = Plan & {
+  units: { id: number; name: string }[];
+};
+
+/** Admin: inclui vínculos plano↔unidade com soft-delete em `planUnits` */
+export type PlanWithUnitsAdmin = PlanWithUnits & {
+  inactiveLinkedUnits: { id: number; name: string }[];
+};
+
+async function fetchUnitsByPlanIds(
+  planIds: number[],
+): Promise<Map<number, { id: number; name: string }[]>> {
+  const db = await getDb();
+  const byPlan = new Map<number, { id: number; name: string }[]>();
+  if (!db || planIds.length === 0) return byPlan;
+
+  const rows = await db
+    .select({
+      planId: planUnits.planId,
+      unitId: units.id,
+      unitName: units.name,
+    })
+    .from(planUnits)
+    .innerJoin(units, eq(planUnits.unitId, units.id))
+    .where(
+      and(
+        inArray(planUnits.planId, planIds),
+        isNull(planUnits.deletedAt),
+        isNull(units.deletedAt),
+      ),
+    );
+
+  for (const r of rows) {
+    const list = byPlan.get(r.planId) ?? [];
+    list.push({ id: r.unitId, name: r.unitName });
+    byPlan.set(r.planId, list);
+  }
+  return byPlan;
+}
+
+/** Vínculos com `planUnits.deletedAt` preenchido (unidade ainda ativa) — só admin */
+async function fetchInactiveLinkedUnitsByPlanIds(
+  planIds: number[],
+): Promise<Map<number, { id: number; name: string }[]>> {
+  const db = await getDb();
+  const byPlan = new Map<number, { id: number; name: string }[]>();
+  if (!db || planIds.length === 0) return byPlan;
+
+  const rows = await db
+    .select({
+      planId: planUnits.planId,
+      unitId: units.id,
+      unitName: units.name,
+    })
+    .from(planUnits)
+    .innerJoin(units, eq(planUnits.unitId, units.id))
+    .where(
+      and(
+        inArray(planUnits.planId, planIds),
+        isNotNull(planUnits.deletedAt),
+        isNull(units.deletedAt),
+      ),
+    );
+
+  for (const r of rows) {
+    const list = byPlan.get(r.planId) ?? [];
+    list.push({ id: r.unitId, name: r.unitName });
+    byPlan.set(r.planId, list);
+  }
+  return byPlan;
+}
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -257,9 +344,23 @@ export async function getAllUnits() {
   const db = await getDb();
   if (!db) return [];
 
-  return await db.select().from(units);
+  return await db.select().from(units).where(isNull(units.deletedAt));
 }
 
+/** Unidade ativa (não excluída) — listagens e checkout */
+export async function getActiveUnitById(unitId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db
+    .select()
+    .from(units)
+    .where(and(eq(units.id, unitId), isNull(units.deletedAt)))
+    .limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+/** Inclui unidades excluídas (ex.: exibir nome em agendamentos antigos) */
 export async function getUnitById(unitId: number) {
   const db = await getDb();
   if (!db) return undefined;
@@ -354,38 +455,193 @@ export async function createProfessional(professional: InsertProfessional) {
 
 // ==================== PLAN OPERATIONS ====================
 
-export async function getAllPlans() {
+export async function getAllPlans(): Promise<PlanWithUnits[]> {
   const db = await getDb();
   if (!db) return [];
 
-  return await db.select().from(plans).where(eq(plans.isActive, true));
+  const planRows = await db
+    .select()
+    .from(plans)
+    .where(and(eq(plans.isActive, true), isNull(plans.deletedAt)));
+  const ids = planRows.map((p) => p.id);
+  const unitMap = await fetchUnitsByPlanIds(ids);
+  return planRows.map((p) => ({
+    ...p,
+    units: unitMap.get(p.id) ?? [],
+  }));
 }
 
-export async function getPlanById(planId: number) {
+export async function getPlanById(
+  planId: number,
+): Promise<PlanWithUnits | undefined> {
   const db = await getDb();
   if (!db) return undefined;
 
   const result = await db
     .select()
     .from(plans)
-    .where(eq(plans.id, planId))
+    .where(and(eq(plans.id, planId), isNull(plans.deletedAt)))
     .limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  if (result.length === 0) return undefined;
+  const plan = result[0];
+  const unitMap = await fetchUnitsByPlanIds([planId]);
+  return { ...plan, units: unitMap.get(planId) ?? [] };
 }
 
-export async function createPlan(plan: InsertPlan) {
+export async function createPlan(plan: InsertPlan): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
   const result = await db.insert(plans).values(plan);
-  return result;
+  return Number(result[0].insertId);
 }
 
-export async function getAllPlansIncludingInactive() {
+export async function getAllPlansIncludingInactive(): Promise<PlanWithUnitsAdmin[]> {
   const db = await getDb();
   if (!db) return [];
 
-  return await db.select().from(plans).orderBy(desc(plans.id));
+  const planRows = await db
+    .select()
+    .from(plans)
+    .where(isNull(plans.deletedAt))
+    .orderBy(desc(plans.id));
+  const ids = planRows.map((p) => p.id);
+  const unitMap = await fetchUnitsByPlanIds(ids);
+  const inactiveMap = await fetchInactiveLinkedUnitsByPlanIds(ids);
+  return planRows.map((p) => ({
+    ...p,
+    units: unitMap.get(p.id) ?? [],
+    inactiveLinkedUnits: inactiveMap.get(p.id) ?? [],
+  }));
+}
+
+export async function setUnitsForPlan(planId: number, unitIds: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const unique = Array.from(new Set(unitIds));
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    if (unique.length === 0) {
+      await tx
+        .update(planUnits)
+        .set({ deletedAt: now })
+        .where(
+          and(eq(planUnits.planId, planId), isNull(planUnits.deletedAt)),
+        );
+      return;
+    }
+
+    await tx
+      .update(planUnits)
+      .set({ deletedAt: now })
+      .where(
+        and(
+          eq(planUnits.planId, planId),
+          notInArray(planUnits.unitId, unique),
+          isNull(planUnits.deletedAt),
+        ),
+      );
+
+    for (const uid of unique) {
+      const existing = await tx
+        .select()
+        .from(planUnits)
+        .where(
+          and(eq(planUnits.planId, planId), eq(planUnits.unitId, uid)),
+        )
+        .limit(1);
+
+      if (existing.length === 0) {
+        await tx.insert(planUnits).values({ planId, unitId: uid });
+      } else if (existing[0].deletedAt != null) {
+        await tx
+          .update(planUnits)
+          .set({ deletedAt: null })
+          .where(
+            and(eq(planUnits.planId, planId), eq(planUnits.unitId, uid)),
+          );
+      }
+    }
+  });
+}
+
+export async function setPlansForUnit(unitId: number, planIds: number[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const unique = Array.from(new Set(planIds));
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    if (unique.length === 0) {
+      await tx
+        .update(planUnits)
+        .set({ deletedAt: now })
+        .where(
+          and(eq(planUnits.unitId, unitId), isNull(planUnits.deletedAt)),
+        );
+      return;
+    }
+
+    await tx
+      .update(planUnits)
+      .set({ deletedAt: now })
+      .where(
+        and(
+          eq(planUnits.unitId, unitId),
+          notInArray(planUnits.planId, unique),
+          isNull(planUnits.deletedAt),
+        ),
+      );
+
+    for (const pid of unique) {
+      const existing = await tx
+        .select()
+        .from(planUnits)
+        .where(
+          and(eq(planUnits.planId, pid), eq(planUnits.unitId, unitId)),
+        )
+        .limit(1);
+
+      if (existing.length === 0) {
+        await tx.insert(planUnits).values({ planId: pid, unitId });
+      } else if (existing[0].deletedAt != null) {
+        await tx
+          .update(planUnits)
+          .set({ deletedAt: null })
+          .where(
+            and(eq(planUnits.planId, pid), eq(planUnits.unitId, unitId)),
+          );
+      }
+    }
+  });
+}
+
+export async function isUnitAllowedForPlan(
+  planId: number,
+  unitId: number,
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+
+  const row = await db
+    .select({ x: planUnits.planId })
+    .from(planUnits)
+    .innerJoin(plans, eq(planUnits.planId, plans.id))
+    .innerJoin(units, eq(planUnits.unitId, units.id))
+    .where(
+      and(
+        eq(planUnits.planId, planId),
+        eq(planUnits.unitId, unitId),
+        isNull(planUnits.deletedAt),
+        isNull(plans.deletedAt),
+        isNull(units.deletedAt),
+      ),
+    )
+    .limit(1);
+  return row.length > 0;
 }
 
 export async function updatePlan(
@@ -395,7 +651,32 @@ export async function updatePlan(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  await db.update(plans).set(data).where(eq(plans.id, planId));
+  await db
+    .update(plans)
+    .set(data)
+    .where(and(eq(plans.id, planId), isNull(plans.deletedAt)));
+}
+
+export async function softDeletePlan(planId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .update(plans)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(plans.id, planId), isNull(plans.deletedAt)));
+  return result;
+}
+
+export async function softDeleteUnit(unitId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db
+    .update(units)
+    .set({ deletedAt: new Date() })
+    .where(and(eq(units.id, unitId), isNull(units.deletedAt)));
+  return result;
 }
 
 export async function updateUnit(
@@ -405,7 +686,10 @@ export async function updateUnit(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  await db.update(units).set(data).where(eq(units.id, unitId));
+  await db
+    .update(units)
+    .set(data)
+    .where(and(eq(units.id, unitId), isNull(units.deletedAt)));
 }
 
 export async function updateRoom(
@@ -424,7 +708,11 @@ export async function getAllUnitsWithRooms() {
   const db = await getDb();
   if (!db) return [];
 
-  const allUnits = await db.select().from(units).orderBy(asc(units.name));
+  const allUnits = await db
+    .select()
+    .from(units)
+    .where(isNull(units.deletedAt))
+    .orderBy(asc(units.name));
   const out: (Unit & { rooms: Room[] })[] = [];
   for (const u of allUnits) {
     const roomList = await db

@@ -1,4 +1,14 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, decimal } from "drizzle-orm/mysql-core";
+import {
+  int,
+  mysqlEnum,
+  mysqlTable,
+  primaryKey,
+  text,
+  timestamp,
+  varchar,
+  boolean,
+  decimal,
+} from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -32,6 +42,7 @@ export const units = mysqlTable("units", {
   name: varchar("name", { length: 255 }).notNull(),
   address: text("address").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
 });
 
 export type Unit = typeof units.$inferSelect;
@@ -84,10 +95,34 @@ export const plans = mysqlTable("plans", {
   credits: int("credits").notNull(), // Créditos que o plano adiciona
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
 });
 
 export type Plan = typeof plans.$inferSelect;
 export type InsertPlan = typeof plans.$inferInsert;
+
+/**
+ * Plan ↔ Unit (N:N) — quais unidades aceitam cada plano
+ */
+export const planUnits = mysqlTable(
+  "planUnits",
+  {
+    planId: int("planId")
+      .notNull()
+      .references(() => plans.id, { onDelete: "cascade" }),
+    unitId: int("unitId")
+      .notNull()
+      .references(() => units.id, { onDelete: "cascade" }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    deletedAt: timestamp("deletedAt"),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.planId, t.unitId] }),
+  }),
+);
+
+export type PlanUnit = typeof planUnits.$inferSelect;
+export type InsertPlanUnit = typeof planUnits.$inferInsert;
 
 /**
  * Appointments (Agendamentos) - Scheduled classes
@@ -136,6 +171,10 @@ export const purchases = mysqlTable("purchases", {
   userId: int("userId").notNull(),
   type: mysqlEnum("type", ["plan", "single"]).notNull(),
   planId: int("planId"), // Se for compra de plano
+  /** Unidade escolhida na compra do plano (checkout) */
+  unitId: int("unitId").references(() => units.id, {
+    onDelete: "set null",
+  }),
   amountInCents: int("amountInCents").notNull(),
   stripeSessionId: varchar("stripeSessionId", { length: 255 }).unique(),
   stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }),

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check } from "lucide-react";
@@ -9,17 +10,66 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { formatPrice } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
+function formatUnitsAvailability(names: string[]): string | null {
+  if (names.length === 0) return null;
+  const sorted = [...names].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  if (sorted.length === 1) {
+    return `Disponível na unidade ${sorted[0]}`;
+  }
+  if (sorted.length === 2) {
+    return `Disponível nas unidades ${sorted[0]} e ${sorted[1]}`;
+  }
+  return `Disponível nas unidades ${sorted.slice(0, -1).join(", ")} e ${sorted[sorted.length - 1]}`;
+}
 
 export default function Plans() {
   const { data: plans, isLoading } = trpc.plans.list.useQuery();
   const checkout = trpc.stripe.createPlanCheckout.useMutation();
   const { isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
+  const [unitChoice, setUnitChoice] = useState<Record<number, number>>({});
 
-  const handleSelectPlan = async (plan: any) => {
+  useEffect(() => {
+    if (!plans) return;
+    setUnitChoice((prev) => {
+      const next = { ...prev };
+      for (const plan of plans) {
+        if (next[plan.id] !== undefined) continue;
+        const first = plan.units?.[0];
+        if (first) next[plan.id] = first.id;
+      }
+      return next;
+    });
+  }, [plans]);
+
+  const handleSelectPlan = async (plan: {
+    id: number;
+    units?: { id: number; name: string }[];
+  }) => {
     if (!isAuthenticated) {
       toast.info("Faça login para adquirir um plano");
       setLocation("/login");
+      return;
+    }
+
+    const units = plan.units ?? [];
+    if (units.length === 0) {
+      toast.error("Nenhuma unidade disponível para este plano");
+      return;
+    }
+
+    const uid = unitChoice[plan.id];
+    if (!uid || !units.some((u) => u.id === uid)) {
+      toast.error("Selecione uma unidade");
       return;
     }
 
@@ -28,6 +78,7 @@ export default function Plans() {
 
       const { url } = await checkout.mutateAsync({
         planId: plan.id,
+        unitId: uid,
       });
 
       if (url) {
@@ -103,6 +154,11 @@ export default function Plans() {
                       plan.priceInCents / plan.totalClasses,
                     );
                     const isPopular = plan.duration === "semester";
+                    const planUnitsList = plan.units ?? [];
+                    const unitsLine = formatUnitsAvailability(
+                      planUnitsList.map((u) => u.name),
+                    );
+                    const noUnits = planUnitsList.length === 0;
 
                     return (
                       <Card
@@ -140,7 +196,47 @@ export default function Plans() {
                             <p className="mt-2 text-sm text-muted-foreground">
                               {plan.description}
                             </p>
+                            {unitsLine && (
+                              <p className="mt-2 text-sm font-medium text-foreground">
+                                {unitsLine}
+                              </p>
+                            )}
                           </div>
+
+                          {planUnitsList.length > 1 && (
+                            <div className="mb-4 space-y-2 text-left">
+                              <Label className="text-sm">
+                                Unidade para assinatura
+                              </Label>
+                              <Select
+                                value={String(
+                                  unitChoice[plan.id] ??
+                                    planUnitsList[0]?.id ??
+                                    "",
+                                )}
+                                onValueChange={(v) =>
+                                  setUnitChoice((prev) => ({
+                                    ...prev,
+                                    [plan.id]: Number(v),
+                                  }))
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Selecione a unidade" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {planUnitsList.map((u) => (
+                                    <SelectItem
+                                      key={u.id}
+                                      value={String(u.id)}
+                                    >
+                                      {u.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
 
                           <ul className="mb-6 space-y-3">
                             <li className="flex items-start gap-2">
@@ -167,7 +263,7 @@ export default function Plans() {
                             className="w-full"
                             variant={isPopular ? "default" : "outline"}
                             onClick={() => handleSelectPlan(plan)}
-                            disabled={checkout.isPending}
+                            disabled={checkout.isPending || noUnits}
                           >
                             Assinar Plano
                           </Button>
