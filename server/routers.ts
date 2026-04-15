@@ -479,7 +479,7 @@ export const appRouter = router({
     getById: publicProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
-        return await db.getUnitById(input.id);
+        return await db.getActiveUnitById(input.id);
       }),
 
     getRooms: publicProcedure
@@ -1248,6 +1248,12 @@ export const appRouter = router({
         };
       }
 
+      const planWithUnits = await db.getPlanById(plan.id);
+      const renewalUnitId =
+        plan.deletedAt != null
+          ? null
+          : (lastPlanPurchase.unitId ?? planWithUnits?.units[0]?.id ?? null);
+
       const startDate = lastPlanPurchase.createdAt;
       const endDate = new Date(startDate);
 
@@ -1266,6 +1272,7 @@ export const appRouter = router({
       return {
         hasPlan: true,
         balance: user.creditsBalance || 0,
+        renewalUnitId,
         plan: {
           id: plan.id,
           name: plan.name,
@@ -1769,21 +1776,24 @@ export const appRouter = router({
           installmentPriceInCents: z.number().int().nonnegative(),
           credits: z.number().int().positive(),
           isActive: z.boolean().optional(),
+          unitIds: z.array(z.number().int().positive()).min(1),
         }),
       )
       .mutation(async ({ input }) => {
-        await db.createPlan({
-          name: input.name,
-          description: input.description,
-          frequency: input.frequency,
-          duration: input.duration,
-          totalClasses: input.totalClasses,
-          priceInCents: input.priceInCents,
-          installments: input.installments,
-          installmentPriceInCents: input.installmentPriceInCents,
-          credits: input.credits,
-          isActive: input.isActive ?? true,
+        const { unitIds, ...planFields } = input;
+        const planId = await db.createPlan({
+          name: planFields.name,
+          description: planFields.description,
+          frequency: planFields.frequency,
+          duration: planFields.duration,
+          totalClasses: planFields.totalClasses,
+          priceInCents: planFields.priceInCents,
+          installments: planFields.installments,
+          installmentPriceInCents: planFields.installmentPriceInCents,
+          credits: planFields.credits,
+          isActive: planFields.isActive ?? true,
         });
+        await db.setUnitsForPlan(planId, unitIds);
         return { success: true };
       }),
 
@@ -1801,10 +1811,11 @@ export const appRouter = router({
           installmentPriceInCents: z.number().int().nonnegative().optional(),
           credits: z.number().int().positive().optional(),
           isActive: z.boolean().optional(),
+          unitIds: z.array(z.number().int().positive()).min(1).optional(),
         }),
       )
       .mutation(async ({ input }) => {
-        const { id, ...rest } = input;
+        const { id, unitIds, ...rest } = input;
         const plan = await db.getPlanById(id);
         if (!plan) {
           throw new TRPCError({
@@ -1816,10 +1827,45 @@ export const appRouter = router({
         for (const [k, v] of Object.entries(rest)) {
           if (v !== undefined) payload[k] = v;
         }
-        if (Object.keys(payload).length === 0) {
-          return { success: true };
+        if (Object.keys(payload).length > 0) {
+          await db.updatePlan(id, payload as Parameters<typeof db.updatePlan>[1]);
         }
-        await db.updatePlan(id, payload as Parameters<typeof db.updatePlan>[1]);
+        if (unitIds !== undefined) {
+          await db.setUnitsForPlan(id, unitIds);
+        }
+        return { success: true };
+      }),
+
+    deletePlan: adminProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        const plan = await db.getPlanById(input.id);
+        if (!plan) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Plano não encontrado ou já excluído",
+          });
+        }
+        await db.softDeletePlan(input.id);
+        return { success: true };
+      }),
+
+    setPlansForUnit: adminProcedure
+      .input(
+        z.object({
+          unitId: z.number().int().positive(),
+          planIds: z.array(z.number().int().positive()),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const unit = await db.getActiveUnitById(input.unitId);
+        if (!unit) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Unidade não encontrada",
+          });
+        }
+        await db.setPlansForUnit(input.unitId, input.planIds);
         return { success: true };
       }),
 
@@ -1849,7 +1895,7 @@ export const appRouter = router({
       )
       .mutation(async ({ input }) => {
         const { id, ...rest } = input;
-        const unit = await db.getUnitById(id);
+        const unit = await db.getActiveUnitById(id);
         if (!unit) {
           throw new TRPCError({
             code: "NOT_FOUND",
@@ -1866,6 +1912,20 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    deleteUnit: adminProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        const unit = await db.getActiveUnitById(input.id);
+        if (!unit) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Unidade não encontrada ou já excluída",
+          });
+        }
+        await db.softDeleteUnit(input.id);
+        return { success: true };
+      }),
+
     createRoom: adminProcedure
       .input(
         z.object({
@@ -1876,7 +1936,7 @@ export const appRouter = router({
         }),
       )
       .mutation(async ({ input }) => {
-        const unit = await db.getUnitById(input.unitId);
+        const unit = await db.getActiveUnitById(input.unitId);
         if (!unit) {
           throw new TRPCError({
             code: "NOT_FOUND",
@@ -1925,7 +1985,12 @@ export const appRouter = router({
   stripe: router({
     // Create checkout session for plan purchase
     createPlanCheckout: protectedProcedure
-      .input(z.object({ planId: z.number() }))
+      .input(
+        z.object({
+          planId: z.number(),
+          unitId: z.number(),
+        }),
+      )
       .mutation(async ({ ctx, input }) => {
         const Stripe = (await import("stripe")).default;
         const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -1937,6 +2002,22 @@ export const appRouter = router({
           throw new TRPCError({
             code: "NOT_FOUND",
             message: "Plano não encontrado",
+          });
+        }
+
+        const allowed = await db.isUnitAllowedForPlan(plan.id, input.unitId);
+        if (!allowed) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Esta unidade não está disponível para o plano selecionado",
+          });
+        }
+
+        const unit = await db.getActiveUnitById(input.unitId);
+        if (!unit) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Unidade não encontrada",
           });
         }
 
@@ -1953,6 +2034,7 @@ export const appRouter = router({
           userId: ctx.user.id,
           type: "plan",
           planId: plan.id,
+          unitId: input.unitId,
           amountInCents: plan.priceInCents,
           status: "pending",
           creditsAdded: plan.credits,
@@ -1966,6 +2048,7 @@ export const appRouter = router({
         const productDescription = [
           plan.description,
           `${plan.credits} crédito(s)`,
+          `Unidade: ${unit.name}`,
           `Assinatura: R$ ${brl(plan.installmentPriceInCents)}/mês por ${plan.installments} ${plan.installments === 1 ? "mês" : "meses"} (total R$ ${brl(plan.priceInCents)})`,
         ]
           .filter(Boolean)
@@ -1996,6 +2079,7 @@ export const appRouter = router({
             user_id: ctx.user.id.toString(),
             type: "plan",
             plan_id: plan.id.toString(),
+            unit_id: input.unitId.toString(),
             credits: plan.credits.toString(),
             installments: plan.installments.toString(),
             installment_price_in_cents: plan.installmentPriceInCents.toString(),
@@ -2007,6 +2091,7 @@ export const appRouter = router({
               user_id: ctx.user.id.toString(),
               type: "plan",
               plan_id: plan.id.toString(),
+              unit_id: input.unitId.toString(),
               credits: plan.credits.toString(),
               billing_installments: plan.installments.toString(),
               installment_price_in_cents: plan.installmentPriceInCents.toString(),

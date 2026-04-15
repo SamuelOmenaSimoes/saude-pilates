@@ -2,6 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
+import { toast } from "sonner";
 
 export function MyPlan() {
   const { data: balanceData, isLoading: loadingBalance } =
@@ -15,9 +16,17 @@ export function MyPlan() {
 
   const handleRenew = async () => {
     if (!planData?.hasPlan || !planData.plan) return;
+    const unitId = planData.renewalUnitId;
+    if (unitId == null) {
+      toast.error(
+        "Não foi possível identificar a unidade. Renove pelo site em Planos.",
+      );
+      return;
+    }
 
     const result = await createPlanCheckout.mutateAsync({
       planId: planData.plan.id,
+      unitId,
     });
 
     if (result?.url) {
@@ -132,9 +141,11 @@ export function MyPlan() {
 
                 <Button
                   onClick={handleRenew}
-                  disabled={createPlanCheckout.isLoading}
+                  disabled={
+                    createPlanCheckout.isPending || planData.renewalUnitId == null
+                  }
                 >
-                  {createPlanCheckout.isLoading
+                  {createPlanCheckout.isPending
                     ? "Redirecionando..."
                     : "Renovar plano"}
                 </Button>

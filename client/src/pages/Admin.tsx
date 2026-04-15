@@ -360,6 +360,10 @@ function durationLabel(d: string) {
 function AdminPlansTab() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [createUnitIds, setCreateUnitIds] = useState<number[]>([]);
+  const [editUnitIds, setEditUnitIds] = useState<number[]>([]);
+
+  const { data: allUnits } = trpc.units.list.useQuery();
 
   const emptyForm = () => ({
     name: "",
@@ -377,12 +381,20 @@ function AdminPlansTab() {
   const [create, setCreate] = useState(emptyForm);
   const [edit, setEdit] = useState(emptyForm);
 
-  const { data: plans, isLoading, refetch } = trpc.admin.listAllPlansAdmin.useQuery();
+  const { data: plans, isLoading, refetch } =
+    trpc.admin.listAllPlansAdmin.useQuery();
+
+  const editingPlan = useMemo(
+    () => plans?.find((x: { id: number }) => x.id === editingId),
+    [plans, editingId],
+  );
+
   const createPlan = trpc.admin.createPlan.useMutation({
     onSuccess: () => {
       toast.success("Plano criado");
       refetch();
       setCreate(emptyForm());
+      setCreateUnitIds([]);
       setShowCreate(false);
     },
     onError: (e) => toast.error(e.message || "Erro ao criar plano"),
@@ -395,9 +407,18 @@ function AdminPlansTab() {
     },
     onError: (e) => toast.error(e.message || "Erro ao atualizar plano"),
   });
+  const deletePlan = trpc.admin.deletePlan.useMutation({
+    onSuccess: () => {
+      toast.success("Plano excluído");
+      refetch();
+      setEditingId(null);
+    },
+    onError: (e) => toast.error(e.message || "Erro ao excluir plano"),
+  });
 
   const startEdit = (p: any) => {
     setEditingId(p.id);
+    setEditUnitIds((p.units ?? []).map((u: { id: number }) => u.id));
     setEdit({
       name: p.name || "",
       description: p.description || "",
@@ -425,6 +446,10 @@ function AdminPlansTab() {
       toast.error("Preencha nome, aulas totais, créditos e preço válidos");
       return;
     }
+    if (createUnitIds.length === 0) {
+      toast.error("Selecione ao menos uma unidade para este plano");
+      return;
+    }
     createPlan.mutate({
       name: create.name.trim(),
       description: create.description.trim() || undefined,
@@ -436,6 +461,7 @@ function AdminPlansTab() {
       installmentPriceInCents: installmentPriceInCents || priceInCents,
       credits,
       isActive: create.isActive,
+      unitIds: createUnitIds,
     });
   };
 
@@ -453,6 +479,10 @@ function AdminPlansTab() {
       toast.error("Preencha nome, aulas totais, créditos e preço válidos");
       return;
     }
+    if (editUnitIds.length === 0) {
+      toast.error("Selecione ao menos uma unidade para este plano");
+      return;
+    }
     updatePlan.mutate({
       id: editingId,
       name: edit.name.trim(),
@@ -465,6 +495,7 @@ function AdminPlansTab() {
       installmentPriceInCents: installmentPriceInCents || priceInCents,
       credits,
       isActive: edit.isActive,
+      unitIds: editUnitIds,
     });
   };
 
@@ -476,7 +507,19 @@ function AdminPlansTab() {
             <CardTitle>Planos</CardTitle>
             <CardDescription>Crie e edite planos exibidos em /plans e no checkout</CardDescription>
           </div>
-          <Button variant={showCreate ? "secondary" : "default"} onClick={() => setShowCreate(!showCreate)}>
+          <Button
+            variant={showCreate ? "secondary" : "default"}
+            onClick={() => {
+              const next = !showCreate;
+              setShowCreate(next);
+              if (next && allUnits?.length) {
+                setCreateUnitIds(allUnits.map((u) => u.id));
+              }
+              if (!next) {
+                setCreateUnitIds([]);
+              }
+            }}
+          >
             {showCreate ? "Cancelar" : "Novo plano"}
           </Button>
         </CardHeader>
@@ -573,6 +616,36 @@ function AdminPlansTab() {
                 />
                 <Label htmlFor="create-active" className="cursor-pointer">Plano ativo (visível no site)</Label>
               </div>
+              <div className="md:col-span-2 space-y-3 rounded-lg border bg-muted/20 p-4">
+                <Label className="text-base">Unidades deste plano</Label>
+                <p className="text-sm text-muted-foreground">
+                  Marque onde o plano pode ser contratado. Ao desmarcar depois, o vínculo fica{" "}
+                  <strong>inativo</strong> (soft delete em planUnits), não é apagado do banco.
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  {allUnits?.map((u) => (
+                    <div key={u.id} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`create-plan-unit-${u.id}`}
+                        checked={createUnitIds.includes(u.id)}
+                        onCheckedChange={(c) => {
+                          setCreateUnitIds((prev) =>
+                            c === true
+                              ? [...prev, u.id]
+                              : prev.filter((id) => id !== u.id),
+                          );
+                        }}
+                      />
+                      <Label htmlFor={`create-plan-unit-${u.id}`} className="font-normal cursor-pointer">
+                        {u.name}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+                {!allUnits?.length && (
+                  <p className="text-sm text-amber-600">Cadastre unidades na aba Unidades primeiro.</p>
+                )}
+              </div>
             </div>
             <Button onClick={submitCreate} disabled={createPlan.isPending}>
               {createPlan.isPending ? "Salvando..." : "Criar plano"}
@@ -598,6 +671,7 @@ function AdminPlansTab() {
                     <TableHead>Duração</TableHead>
                     <TableHead>Preço</TableHead>
                     <TableHead>Créditos</TableHead>
+                    <TableHead>Unidades</TableHead>
                     <TableHead>Ativo</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
@@ -611,17 +685,51 @@ function AdminPlansTab() {
                         <TableCell>{durationLabel(p.duration)}</TableCell>
                         <TableCell>{formatPrice(p.priceInCents)}</TableCell>
                         <TableCell>{p.credits}</TableCell>
+                        <TableCell className="max-w-[14rem] text-sm">
+                          <div
+                            className="truncate"
+                            title={(p.units ?? []).map((x: { name: string }) => x.name).join(", ")}
+                          >
+                            {(p.units ?? []).length
+                              ? (p.units as { name: string }[]).map((x) => x.name).join(", ")
+                              : "—"}
+                          </div>
+                          {(p.inactiveLinkedUnits ?? []).length > 0 && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              +{(p.inactiveLinkedUnits as { name: string }[]).length} vínculo(s) inativo(s)
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell>{p.isActive ? "Sim" : "Não"}</TableCell>
                         <TableCell>
-                          <Button size="sm" variant="outline" onClick={() => startEdit(p)}>
-                            Editar
-                          </Button>
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" variant="outline" onClick={() => startEdit(p)}>
+                              Editar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={deletePlan.isPending}
+                              onClick={() => {
+                                if (
+                                  !confirm(
+                                    `Excluir o plano "${p.name}"? Ele deixa de aparecer no site e não poderá ser renovado.`,
+                                  )
+                                ) {
+                                  return;
+                                }
+                                deletePlan.mutate({ id: p.id });
+                              }}
+                            >
+                              Excluir
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                         Nenhum plano cadastrado
                       </TableCell>
                     </TableRow>
@@ -731,6 +839,50 @@ function AdminPlansTab() {
                 />
                 <Label htmlFor="edit-active" className="cursor-pointer">Plano ativo</Label>
               </div>
+              <div className="md:col-span-2 space-y-3 rounded-lg border bg-muted/20 p-4">
+                <Label className="text-base">Unidades deste plano</Label>
+                <p className="text-sm text-muted-foreground">
+                  Desmarcar grava <code className="text-xs">deletedAt</code> no vínculo (inativo). Marcar de novo reativa o mesmo vínculo.
+                </p>
+                {(editingPlan?.inactiveLinkedUnits ?? []).length > 0 && (
+                  <p className="text-sm text-amber-800 dark:text-amber-200/90 rounded-md bg-amber-500/10 px-3 py-2">
+                    Vínculos inativos neste plano:{" "}
+                    <strong>
+                      {(editingPlan?.inactiveLinkedUnits ?? []).map((x: { name: string }) => x.name).join(", ")}
+                    </strong>
+                    . Marque a unidade acima para reativar no site.
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-4">
+                  {allUnits?.map((u) => {
+                    const inactiveOnly =
+                      (editingPlan?.inactiveLinkedUnits ?? []).some(
+                        (x: { id: number }) => x.id === u.id,
+                      ) && !editUnitIds.includes(u.id);
+                    return (
+                      <div key={u.id} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`edit-plan-unit-${u.id}`}
+                          checked={editUnitIds.includes(u.id)}
+                          onCheckedChange={(c) => {
+                            setEditUnitIds((prev) =>
+                              c === true
+                                ? [...prev, u.id]
+                                : prev.filter((id) => id !== u.id),
+                            );
+                          }}
+                        />
+                        <Label htmlFor={`edit-plan-unit-${u.id}`} className="font-normal cursor-pointer">
+                          {u.name}
+                          {inactiveOnly ? (
+                            <span className="text-xs text-amber-700 dark:text-amber-400 ml-1">(inativo)</span>
+                          ) : null}
+                        </Label>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
             <Button onClick={submitEdit} disabled={updatePlan.isPending}>
               {updatePlan.isPending ? "Salvando..." : "Salvar alterações"}
@@ -749,6 +901,11 @@ function AdminUnitCard({
   onUpdateRoom,
   createRoomPending,
   updateRoomPending,
+  allPlansForUnitLinks,
+  onSavePlanLinksForUnit,
+  savePlanLinksPending,
+  onDeleteUnit,
+  deleteUnitPending,
 }: {
   unit: { id: number; name: string; address: string; rooms: any[] };
   onSaveUnit: (id: number, name: string, address: string) => void;
@@ -764,17 +921,36 @@ function AdminUnitCard({
   ) => void;
   createRoomPending: boolean;
   updateRoomPending: boolean;
+  allPlansForUnitLinks: {
+    id: number;
+    name: string;
+    units: { id: number }[];
+    inactiveLinkedUnits?: { id: number; name: string }[];
+  }[];
+  onSavePlanLinksForUnit: (unitId: number, planIds: number[]) => void;
+  savePlanLinksPending: boolean;
+  onDeleteUnit: (unitId: number) => void;
+  deleteUnitPending: boolean;
 }) {
   const [uName, setUName] = useState(unit.name);
   const [uAddr, setUAddr] = useState(unit.address);
   const [newRoom, setNewRoom] = useState({ name: "", maxCapacity: "4", isGroupOnly: true });
   const [editingRoomId, setEditingRoomId] = useState<number | null>(null);
   const [editRoom, setEditRoom] = useState({ name: "", maxCapacity: "", isGroupOnly: true });
+  const [planLinkSelection, setPlanLinkSelection] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     setUName(unit.name);
     setUAddr(unit.address);
   }, [unit.name, unit.address]);
+
+  useEffect(() => {
+    const next: Record<number, boolean> = {};
+    for (const p of allPlansForUnitLinks) {
+      next[p.id] = p.units.some((u) => u.id === unit.id);
+    }
+    setPlanLinkSelection(next);
+  }, [unit.id, allPlansForUnitLinks]);
 
   const handleCreateRoom = () => {
     if (!newRoom.name.trim()) {
@@ -827,12 +1003,80 @@ function AdminUnitCard({
             <Textarea value={uAddr} onChange={(e) => setUAddr(e.target.value)} rows={2} />
           </div>
         </div>
-        <Button
-          size="sm"
-          onClick={() => onSaveUnit(unit.id, uName, uAddr)}
-        >
-          Salvar unidade
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            onClick={() => onSaveUnit(unit.id, uName, uAddr)}
+          >
+            Salvar unidade
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            disabled={deleteUnitPending}
+            onClick={() => {
+              if (
+                !confirm(
+                  `Excluir a unidade "${unit.name}"? Ela some do site e do admin; agendamentos antigos continuam com o registro.`,
+                )
+              ) {
+                return;
+              }
+              onDeleteUnit(unit.id);
+            }}
+          >
+            {deleteUnitPending ? "Excluindo..." : "Excluir unidade"}
+          </Button>
+        </div>
+
+        <div className="rounded-lg border bg-background p-4 space-y-3">
+          <h4 className="font-medium">Planos nesta unidade</h4>
+          <p className="text-sm text-muted-foreground">
+            Marque em quais planos esta unidade aparece. Desmarcar torna o vínculo <strong>inativo</strong> (
+            <code className="text-xs">planUnits.deletedAt</code>
+            ); marcar de novo reativa. Alinhado à aba Planos.
+          </p>
+          <div className="flex flex-wrap gap-4">
+            {allPlansForUnitLinks.map((p) => (
+              <div key={p.id} className="flex items-center gap-2">
+                <Checkbox
+                  id={`unit-${unit.id}-plan-${p.id}`}
+                  checked={planLinkSelection[p.id] === true}
+                  onCheckedChange={(c) =>
+                    setPlanLinkSelection((prev) => ({
+                      ...prev,
+                      [p.id]: c === true,
+                    }))
+                  }
+                />
+                <Label htmlFor={`unit-${unit.id}-plan-${p.id}`} className="font-normal cursor-pointer text-sm">
+                  {p.name}
+                  {p.inactiveLinkedUnits?.some((x) => x.id === unit.id) ? (
+                    <span className="text-amber-700 dark:text-amber-400 text-xs ml-1">(inativo)</span>
+                  ) : null}
+                </Label>
+              </div>
+            ))}
+          </div>
+          {allPlansForUnitLinks.length === 0 && (
+            <p className="text-sm text-muted-foreground">Nenhum plano cadastrado.</p>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={savePlanLinksPending}
+            onClick={() => {
+              const ids = Object.entries(planLinkSelection)
+                .filter(([, v]) => v)
+                .map(([k]) => Number(k));
+              onSavePlanLinksForUnit(unit.id, ids);
+            }}
+          >
+            {savePlanLinksPending ? "Salvando..." : "Salvar vínculos com planos"}
+          </Button>
+        </div>
 
         <div>
           <h4 className="font-medium mb-3">Salas</h4>
@@ -957,6 +1201,24 @@ const emptyNewUnitForm = () => ({
 
 function AdminUnitsTab() {
   const { data: unitsWithRooms, isLoading, refetch } = trpc.admin.listUnitsWithRooms.useQuery();
+  const { data: allPlansForUnitLinks, refetch: refetchPlansForLinks } =
+    trpc.admin.listAllPlansAdmin.useQuery();
+  const setPlansForUnit = trpc.admin.setPlansForUnit.useMutation({
+    onSuccess: () => {
+      toast.success("Vínculos com planos atualizados");
+      refetchPlansForLinks();
+    },
+    onError: (e) => toast.error(e.message || "Erro ao salvar vínculos"),
+  });
+  const deleteUnit = trpc.admin.deleteUnit.useMutation({
+    onSuccess: () => {
+      toast.success("Unidade excluída");
+      refetch();
+      setSelectedUnitId(null);
+      refetchPlansForLinks();
+    },
+    onError: (e) => toast.error(e.message || "Erro ao excluir unidade"),
+  });
   const createUnit = trpc.admin.createUnit.useMutation();
   const createRoom = trpc.admin.createRoom.useMutation({
     onSuccess: () => refetch(),
@@ -1166,6 +1428,13 @@ function AdminUnitsTab() {
                 }
                 createRoomPending={createRoom.isPending}
                 updateRoomPending={updateRoom.isPending}
+                allPlansForUnitLinks={allPlansForUnitLinks ?? []}
+                onSavePlanLinksForUnit={(unitId, planIds) =>
+                  setPlansForUnit.mutate({ unitId, planIds })
+                }
+                savePlanLinksPending={setPlansForUnit.isPending}
+                onDeleteUnit={(unitId) => deleteUnit.mutate({ id: unitId })}
+                deleteUnitPending={deleteUnit.isPending}
               />
             )}
           </CardContent>
