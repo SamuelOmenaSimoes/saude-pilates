@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check } from "lucide-react";
@@ -19,6 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+const PLAN_TYPE_ORDER = ["individual", "pair", "group"] as const;
+
 function formatUnitsAvailability(names: string[]): string | null {
   if (names.length === 0) return null;
   const sorted = [...names].sort((a, b) => a.localeCompare(b, "pt-BR"));
@@ -36,20 +38,93 @@ export default function Plans() {
   const checkout = trpc.stripe.createPlanCheckout.useMutation();
   const { isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
+  const [selectedUnitId, setSelectedUnitId] = useState<number | "all">("all");
+  const [selectedPlanType, setSelectedPlanType] = useState<
+    "individual" | "pair" | "group" | "all"
+  >("all");
   const [unitChoice, setUnitChoice] = useState<Record<number, number>>({});
+  /** Só após clicar em Assinar sem unidade (filtro Todas + várias unidades no plano). */
+  const [unitChoiceSubmitAttempted, setUnitChoiceSubmitAttempted] = useState<
+    Record<number, boolean>
+  >({});
 
-  useEffect(() => {
-    if (!plans) return;
-    setUnitChoice((prev) => {
-      const next = { ...prev };
-      for (const plan of plans) {
-        if (next[plan.id] !== undefined) continue;
-        const first = plan.units?.[0];
-        if (first) next[plan.id] = first.id;
+  const allUnits = useMemo(() => {
+    if (!plans?.length) return [];
+    const byId = new Map<number, { id: number; name: string }>();
+    for (const plan of plans) {
+      for (const u of plan.units ?? []) {
+        byId.set(u.id, u);
       }
-      return next;
-    });
+    }
+    return Array.from(byId.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, "pt-BR"),
+    );
   }, [plans]);
+
+  const planTypesForUnit = useMemo(() => {
+    if (!plans?.length) return [];
+    const types = new Set<string>();
+    for (const p of plans) {
+      if (
+        selectedUnitId === "all" ||
+        (p.units ?? []).some((u) => u.id === selectedUnitId)
+      ) {
+        types.add(p.planType ?? "group");
+      }
+    }
+    const list = Array.from(types) as ("individual" | "pair" | "group")[];
+    return list.sort(
+      (a, b) =>
+        PLAN_TYPE_ORDER.indexOf(a) - PLAN_TYPE_ORDER.indexOf(b),
+    );
+  }, [plans, selectedUnitId]);
+
+  const filteredPlans = useMemo(() => {
+    if (!plans?.length) return [];
+    return plans.filter((p) => {
+      const unitOk =
+        selectedUnitId === "all" ||
+        (p.units ?? []).some((u) => u.id === selectedUnitId);
+      const typeOk =
+        selectedPlanType === "all" ||
+        (p.planType ?? "group") === selectedPlanType;
+      return unitOk && typeOk;
+    });
+  }, [plans, selectedUnitId, selectedPlanType]);
+
+  /** Entre os planos visíveis com o filtro atual, só um card exibe "Mais Econômico" (menor preço por aula). */
+  const mostEconomicalPlanId = useMemo(() => {
+    if (filteredPlans.length === 0) return null;
+    const ranked = filteredPlans.map((p) => ({
+      id: p.id,
+      pricePerClass: p.priceInCents / p.totalClasses,
+    }));
+    ranked.sort((a, b) => {
+      if (a.pricePerClass !== b.pricePerClass) {
+        return a.pricePerClass - b.pricePerClass;
+      }
+      return a.id - b.id;
+    });
+    return ranked[0]?.id ?? null;
+  }, [filteredPlans]);
+
+  const resolveCheckoutUnitId = (plan: {
+    id: number;
+    units?: { id: number; name: string }[];
+  }): number | null => {
+    const units = plan.units ?? [];
+    if (units.length === 0) return null;
+    if (selectedUnitId !== "all") {
+      if (!units.some((u) => u.id === selectedUnitId)) return null;
+      return selectedUnitId;
+    }
+    if (units.length === 1) {
+      return units[0]!.id;
+    }
+    const uid = unitChoice[plan.id];
+    if (uid != null && units.some((u) => u.id === uid)) return uid;
+    return null;
+  };
 
   const handleSelectPlan = async (plan: {
     id: number;
@@ -61,15 +136,20 @@ export default function Plans() {
       return;
     }
 
-    const units = plan.units ?? [];
-    if (units.length === 0) {
-      toast.error("Nenhuma unidade disponível para este plano");
-      return;
-    }
-
-    const uid = unitChoice[plan.id];
-    if (!uid || !units.some((u) => u.id === uid)) {
-      toast.error("Selecione uma unidade");
+    const unitId = resolveCheckoutUnitId(plan);
+    if (unitId == null) {
+      const units = plan.units ?? [];
+      if (selectedUnitId === "all" && units.length > 1) {
+        setUnitChoiceSubmitAttempted((prev) => ({
+          ...prev,
+          [plan.id]: true,
+        }));
+      }
+      toast.error(
+        selectedUnitId === "all"
+          ? "Selecione a unidade para assinatura neste plano"
+          : "Esta combinação de unidade e plano não está disponível",
+      );
       return;
     }
 
@@ -78,7 +158,7 @@ export default function Plans() {
 
       const { url } = await checkout.mutateAsync({
         planId: plan.id,
-        unitId: uid,
+        unitId,
       });
 
       if (url) {
@@ -89,21 +169,36 @@ export default function Plans() {
     }
   };
 
-  const groupedPlans = plans?.reduce(
-    (acc, plan) => {
-      if (!acc[plan.frequency]) {
-        acc[plan.frequency] = [];
-      }
-      acc[plan.frequency].push(plan);
-      return acc;
-    },
-    {} as Record<string, typeof plans>,
-  );
+  const groupedPlans = useMemo(() => {
+    if (filteredPlans.length === 0) return undefined;
+    return filteredPlans.reduce(
+      (acc, plan) => {
+        if (!acc[plan.frequency]) {
+          acc[plan.frequency] = [];
+        }
+        acc[plan.frequency].push(plan);
+        return acc;
+      },
+      {} as Record<string, (typeof filteredPlans)[number][]>,
+    );
+  }, [filteredPlans]);
 
   const frequencyLabels: Record<string, string> = {
     "1x": "1x por semana",
     "2x": "2x por semana",
     "3x": "3x por semana",
+  };
+
+  const planTypeLabels: Record<string, string> = {
+    individual: "Individual",
+    pair: "Dupla",
+    group: "Em grupo",
+  };
+
+  const classFormatLine = (planType: string): string => {
+    if (planType === "group") return "Aulas em grupo (máx. 4 alunos)";
+    if (planType === "pair") return "Aulas em dupla";
+    return "Aulas individuais";
   };
 
   if (isLoading) {
@@ -131,8 +226,8 @@ export default function Plans() {
               Nossos Planos
             </h1>
             <p className="text-lg text-muted-foreground md:text-xl">
-              Escolha o plano ideal para sua rotina e objetivos. Todos os planos
-              incluem aulas em grupo com até 4 alunos.
+              Filtre por unidade e tipo de aula, ou use &quot;Todas&quot; /
+              &quot;Todos&quot; para ver todos os planos.
             </p>
           </div>
         </div>
@@ -141,6 +236,86 @@ export default function Plans() {
       {/* Plans Section */}
       <section className="py-20">
         <div className="container">
+          <div className="mx-auto mb-12 max-w-2xl space-y-10">
+            <div className="space-y-3">
+              <Label className="text-base font-semibold" htmlFor="plan-unit">
+                1. Unidade
+              </Label>
+              <Select
+                value={String(selectedUnitId)}
+                onValueChange={(v) => {
+                  setSelectedUnitId(v === "all" ? "all" : Number(v));
+                  setSelectedPlanType("all");
+                }}
+              >
+                <SelectTrigger id="plan-unit" className="w-full">
+                  <SelectValue placeholder="Unidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as unidades</SelectItem>
+                  {allUnits.map((u) => (
+                    <SelectItem key={u.id} value={String(u.id)}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {plans?.length && allUnits.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Nenhuma unidade com planos disponíveis no momento.
+                </p>
+              )}
+            </div>
+
+            {!!plans?.length && (
+              <div className="space-y-3">
+                <p className="text-base font-semibold">2. Tipo de plano</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant={
+                      selectedPlanType === "all" ? "default" : "outline"
+                    }
+                    onClick={() => setSelectedPlanType("all")}
+                  >
+                    Todos
+                  </Button>
+                  {planTypesForUnit.map((pt) => (
+                    <Button
+                      key={pt}
+                      type="button"
+                      variant={selectedPlanType === pt ? "default" : "outline"}
+                      onClick={() => setSelectedPlanType(pt)}
+                    >
+                      {planTypeLabels[pt]}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {!!plans?.length &&
+            filteredPlans.length === 0 && (
+              <p className="mb-8 text-center text-muted-foreground">
+                Nenhum plano encontrado para esta combinação.
+              </p>
+            )}
+
+          {groupedPlans && (
+            <p className="mb-10 text-center text-lg text-muted-foreground">
+              <span className="font-medium text-foreground">3. Planos</span>
+              {" · "}
+              {selectedUnitId === "all"
+                ? "Todas as unidades"
+                : allUnits.find((u) => u.id === selectedUnitId)?.name}
+              {" · "}
+              {selectedPlanType === "all"
+                ? "Todos os tipos"
+                : planTypeLabels[selectedPlanType]}
+            </p>
+          )}
+
           {groupedPlans &&
             Object.entries(groupedPlans).map(([frequency, frequencyPlans]) => (
               <div key={frequency} className="mb-16">
@@ -153,12 +328,25 @@ export default function Plans() {
                     const pricePerClassCents = Math.round(
                       plan.priceInCents / plan.totalClasses,
                     );
-                    const isPopular = plan.duration === "semester";
+                    const isPopular = plan.id === mostEconomicalPlanId;
                     const planUnitsList = plan.units ?? [];
-                    const unitsLine = formatUnitsAvailability(
-                      planUnitsList.map((u) => u.name),
-                    );
                     const noUnits = planUnitsList.length === 0;
+                    const needsUnitChoice =
+                      selectedUnitId === "all" && planUnitsList.length > 1;
+                    const chosenForPlan = unitChoice[plan.id];
+                    const hasValidUnitChoice =
+                      chosenForPlan != null &&
+                      planUnitsList.some((u) => u.id === chosenForPlan);
+                    const missingUnitChoice = needsUnitChoice && !hasValidUnitChoice;
+                    const showUnitFieldError =
+                      missingUnitChoice &&
+                      unitChoiceSubmitAttempted[plan.id] === true;
+                    const unitsLine =
+                      selectedUnitId === "all"
+                        ? formatUnitsAvailability(
+                            planUnitsList.map((u) => u.name),
+                          )
+                        : null;
 
                     return (
                       <Card
@@ -179,6 +367,10 @@ export default function Plans() {
                             {plan.duration === "quarterly" && "Trimestral"}
                             {plan.duration === "semester" && "Semestral"}
                           </CardTitle>
+                          <p className="text-center text-sm font-medium text-primary">
+                            {planTypeLabels[plan.planType ?? "group"] ??
+                              plan.planType}
+                          </p>
                         </CardHeader>
 
                         <CardContent>
@@ -191,8 +383,18 @@ export default function Plans() {
                               {formatPrice(pricePerClassCents)}
                               <span className="ml-1 text-base font-medium text-muted-foreground">
                                 por aula
+                                {(plan.planType ?? "group") === "pair" ? (
+                                  <span className="align-super text-lg leading-none">
+                                    *
+                                  </span>
+                                ) : null}
                               </span>
                             </p>
+                            {(plan.planType ?? "group") === "pair" && (
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                * Preço por pessoa.
+                              </p>
+                            )}
                             <p className="mt-2 text-sm text-muted-foreground">
                               {plan.description}
                             </p>
@@ -203,46 +405,55 @@ export default function Plans() {
                             )}
                           </div>
 
-                          {planUnitsList.length > 1 && (
-                            <div className="mb-4 space-y-2 text-left">
-                              <Label className="text-sm">
-                                Unidade para assinatura
-                              </Label>
-                              <Select
-                                value={String(
-                                  unitChoice[plan.id] ??
-                                    planUnitsList[0]?.id ??
-                                    "",
-                                )}
-                                onValueChange={(v) =>
-                                  setUnitChoice((prev) => ({
-                                    ...prev,
-                                    [plan.id]: Number(v),
-                                  }))
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Selecione a unidade" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {planUnitsList.map((u) => (
-                                    <SelectItem
-                                      key={u.id}
-                                      value={String(u.id)}
-                                    >
-                                      {u.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          )}
+                          {selectedUnitId === "all" &&
+                            planUnitsList.length > 1 && (
+                              <div className="mb-4 space-y-2 text-left">
+                                <Label className="text-sm">
+                                  Unidade para assinatura
+                                </Label>
+                                <Select
+                                  value={
+                                    chosenForPlan != null
+                                      ? String(chosenForPlan)
+                                      : undefined
+                                  }
+                                  onValueChange={(v) => {
+                                    const id = Number(v);
+                                    setUnitChoice((prev) => ({
+                                      ...prev,
+                                      [plan.id]: id,
+                                    }));
+                                    setUnitChoiceSubmitAttempted((prev) => ({
+                                      ...prev,
+                                      [plan.id]: false,
+                                    }));
+                                  }}
+                                >
+                                  <SelectTrigger
+                                    className="w-full"
+                                    aria-invalid={showUnitFieldError}
+                                  >
+                                    <SelectValue placeholder="Selecione a unidade" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {planUnitsList.map((u) => (
+                                      <SelectItem
+                                        key={u.id}
+                                        value={String(u.id)}
+                                      >
+                                        {u.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
 
                           <ul className="mb-6 space-y-3">
                             <li className="flex items-start gap-2">
                               <Check className="h-5 w-5 flex-shrink-0 text-primary" />
                               <span className="text-sm">
-                                Aulas em grupo (máx. 4 alunos)
+                                {classFormatLine(plan.planType ?? "group")}
                               </span>
                             </li>
                             <li className="flex items-start gap-2">

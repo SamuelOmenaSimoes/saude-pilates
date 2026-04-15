@@ -357,11 +357,20 @@ function durationLabel(d: string) {
   return d;
 }
 
+function planTypeLabel(code: string) {
+  if (code === "individual") return "Individual";
+  if (code === "pair") return "Dupla";
+  if (code === "group") return "Em grupo";
+  return code;
+}
+
 function AdminPlansTab() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [createUnitIds, setCreateUnitIds] = useState<number[]>([]);
   const [editUnitIds, setEditUnitIds] = useState<number[]>([]);
+  const [editingCatalogId, setEditingCatalogId] = useState<number | null>(null);
+  const [catalogEdit, setCatalogEdit] = useState({ name: "", description: "" });
 
   const { data: allUnits } = trpc.units.list.useQuery();
 
@@ -370,6 +379,7 @@ function AdminPlansTab() {
     description: "",
     frequency: "2x" as "1x" | "2x" | "3x",
     duration: "monthly" as "monthly" | "quarterly" | "semester",
+    planType: "group" as "individual" | "pair" | "group",
     totalClasses: "",
     priceReais: "",
     installments: "1",
@@ -384,6 +394,12 @@ function AdminPlansTab() {
   const { data: plans, isLoading, refetch } =
     trpc.admin.listAllPlansAdmin.useQuery();
 
+  const {
+    data: catalogs,
+    isLoading: loadingCatalogs,
+    refetch: refetchCatalogs,
+  } = trpc.admin.listPlanCatalog.useQuery();
+
   const editingPlan = useMemo(
     () => plans?.find((x: { id: number }) => x.id === editingId),
     [plans, editingId],
@@ -393,6 +409,7 @@ function AdminPlansTab() {
     onSuccess: () => {
       toast.success("Plano criado");
       refetch();
+      refetchCatalogs();
       setCreate(emptyForm());
       setCreateUnitIds([]);
       setShowCreate(false);
@@ -403,6 +420,7 @@ function AdminPlansTab() {
     onSuccess: () => {
       toast.success("Plano atualizado");
       refetch();
+      refetchCatalogs();
       setEditingId(null);
     },
     onError: (e) => toast.error(e.message || "Erro ao atualizar plano"),
@@ -411,10 +429,46 @@ function AdminPlansTab() {
     onSuccess: () => {
       toast.success("Plano excluído");
       refetch();
+      refetchCatalogs();
       setEditingId(null);
     },
     onError: (e) => toast.error(e.message || "Erro ao excluir plano"),
   });
+
+  const updatePlanCatalog = trpc.admin.updatePlanCatalog.useMutation({
+    onSuccess: () => {
+      toast.success("Catálogo atualizado");
+      refetchCatalogs();
+      refetch();
+      setEditingCatalogId(null);
+    },
+    onError: (e) => toast.error(e.message || "Erro ao atualizar catálogo"),
+  });
+
+  const startEditCatalog = (c: {
+    id: number;
+    name: string;
+    description: string | null;
+  }) => {
+    setEditingCatalogId(c.id);
+    setCatalogEdit({
+      name: c.name,
+      description: c.description ?? "",
+    });
+  };
+
+  const submitCatalogEdit = () => {
+    if (editingCatalogId == null) return;
+    if (!catalogEdit.name.trim()) {
+      toast.error("Informe o nome do catálogo");
+      return;
+    }
+    updatePlanCatalog.mutate({
+      id: editingCatalogId,
+      name: catalogEdit.name.trim(),
+      description: catalogEdit.description.trim() || null,
+    });
+  };
 
   const startEdit = (p: any) => {
     setEditingId(p.id);
@@ -424,6 +478,7 @@ function AdminPlansTab() {
       description: p.description || "",
       frequency: p.frequency,
       duration: p.duration,
+      planType: p.planType ?? "group",
       totalClasses: String(p.totalClasses),
       priceReais: centsToReaisStr(p.priceInCents),
       installments: String(p.installments),
@@ -455,6 +510,7 @@ function AdminPlansTab() {
       description: create.description.trim() || undefined,
       frequency: create.frequency,
       duration: create.duration,
+      planType: create.planType,
       totalClasses,
       priceInCents,
       installments: inst,
@@ -489,6 +545,7 @@ function AdminPlansTab() {
       description: edit.description.trim() || null,
       frequency: edit.frequency,
       duration: edit.duration,
+      planType: edit.planType,
       totalClasses,
       priceInCents,
       installments: inst,
@@ -501,6 +558,121 @@ function AdminPlansTab() {
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Catálogo de planos</CardTitle>
+          <CardDescription>
+            Nome e descrição de vitrine compartilhados pelas ofertas vinculadas. Alterar aqui
+            atualiza o texto em todos os planos que usam este item e no site.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loadingCatalogs ? (
+            <p className="text-muted-foreground text-sm">Carregando catálogo...</p>
+          ) : (
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[4rem]">ID</TableHead>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Descrição</TableHead>
+                    <TableHead className="w-[6rem]">Ofertas</TableHead>
+                    <TableHead className="w-[12rem]"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {catalogs && catalogs.length > 0 ? (
+                    catalogs.map((c) => (
+                      <TableRow key={c.id}>
+                        <TableCell className="text-muted-foreground">{c.id}</TableCell>
+                        {editingCatalogId === c.id ? (
+                          <>
+                            <TableCell>
+                              <Input
+                                value={catalogEdit.name}
+                                onChange={(e) =>
+                                  setCatalogEdit((prev) => ({
+                                    ...prev,
+                                    name: e.target.value,
+                                  }))
+                                }
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Textarea
+                                value={catalogEdit.description}
+                                onChange={(e) =>
+                                  setCatalogEdit((prev) => ({
+                                    ...prev,
+                                    description: e.target.value,
+                                  }))
+                                }
+                                rows={2}
+                                className="min-w-[200px]"
+                              />
+                            </TableCell>
+                            <TableCell>{c.offerCount}</TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={submitCatalogEdit}
+                                  disabled={updatePlanCatalog.isPending}
+                                >
+                                  {updatePlanCatalog.isPending ? "Salvando..." : "Salvar"}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setEditingCatalogId(null)}
+                                  disabled={updatePlanCatalog.isPending}
+                                >
+                                  Cancelar
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </>
+                        ) : (
+                          <>
+                            <TableCell className="font-medium">{c.name}</TableCell>
+                            <TableCell
+                              className="max-w-md text-sm text-muted-foreground"
+                              title={c.description ?? undefined}
+                            >
+                              <span className="line-clamp-2">{c.description || "—"}</span>
+                            </TableCell>
+                            <TableCell>{c.offerCount}</TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => startEditCatalog(c)}
+                              >
+                                Editar
+                              </Button>
+                            </TableCell>
+                          </>
+                        )}
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={5}
+                        className="text-center text-muted-foreground py-8"
+                      >
+                        Nenhum item de catálogo
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <div>
@@ -562,6 +734,22 @@ function AdminPlansTab() {
                     <SelectItem value="monthly">Mensal</SelectItem>
                     <SelectItem value="quarterly">Trimestral</SelectItem>
                     <SelectItem value="semester">Semestral</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Tipo de plano</Label>
+                <Select
+                  value={create.planType}
+                  onValueChange={(v: "individual" | "pair" | "group") =>
+                    setCreate({ ...create, planType: v })
+                  }
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="individual">Individual</SelectItem>
+                    <SelectItem value="pair">Dupla</SelectItem>
+                    <SelectItem value="group">Em grupo</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -669,6 +857,7 @@ function AdminPlansTab() {
                     <TableHead>Nome</TableHead>
                     <TableHead>Freq.</TableHead>
                     <TableHead>Duração</TableHead>
+                    <TableHead>Tipo</TableHead>
                     <TableHead>Preço</TableHead>
                     <TableHead>Créditos</TableHead>
                     <TableHead>Unidades</TableHead>
@@ -683,6 +872,7 @@ function AdminPlansTab() {
                         <TableCell className="font-medium">{p.name}</TableCell>
                         <TableCell>{p.frequency}</TableCell>
                         <TableCell>{durationLabel(p.duration)}</TableCell>
+                        <TableCell>{planTypeLabel(p.planType)}</TableCell>
                         <TableCell>{formatPrice(p.priceInCents)}</TableCell>
                         <TableCell>{p.credits}</TableCell>
                         <TableCell className="max-w-[14rem] text-sm">
@@ -729,7 +919,7 @@ function AdminPlansTab() {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                         Nenhum plano cadastrado
                       </TableCell>
                     </TableRow>
@@ -787,6 +977,22 @@ function AdminPlansTab() {
                     <SelectItem value="monthly">Mensal</SelectItem>
                     <SelectItem value="quarterly">Trimestral</SelectItem>
                     <SelectItem value="semester">Semestral</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Tipo de plano</Label>
+                <Select
+                  value={edit.planType}
+                  onValueChange={(v: "individual" | "pair" | "group") =>
+                    setEdit({ ...edit, planType: v })
+                  }
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="individual">Individual</SelectItem>
+                    <SelectItem value="pair">Dupla</SelectItem>
+                    <SelectItem value="group">Em grupo</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -926,6 +1132,8 @@ function AdminUnitCard({
     name: string;
     units: { id: number }[];
     inactiveLinkedUnits?: { id: number; name: string }[];
+    planTypeCatalogLabel: string;
+    planTypeOccupiesWholeRoom: boolean;
   }[];
   onSavePlanLinksForUnit: (unitId: number, planIds: number[]) => void;
   savePlanLinksPending: boolean;
@@ -1052,6 +1260,16 @@ function AdminUnitCard({
                 />
                 <Label htmlFor={`unit-${unit.id}-plan-${p.id}`} className="font-normal cursor-pointer text-sm">
                   {p.name}
+                  <span className="text-muted-foreground font-normal">
+                    {" "}
+                    — {p.planTypeCatalogLabel}
+                    {p.planTypeOccupiesWholeRoom ? (
+                      <span className="text-amber-800 dark:text-amber-300/90">
+                        {" "}
+                        (ocupa sala inteira)
+                      </span>
+                    ) : null}
+                  </span>
                   {p.inactiveLinkedUnits?.some((x) => x.id === unit.id) ? (
                     <span className="text-amber-700 dark:text-amber-400 text-xs ml-1">(inativo)</span>
                   ) : null}

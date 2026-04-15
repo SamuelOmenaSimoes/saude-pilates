@@ -582,7 +582,21 @@ export const appRouter = router({
             apt.appointmentDate.getTime() === input.appointmentDate.getTime(),
         );
 
-        if (sameTimeAppointments.length >= room.maxCapacity) {
+        const trialPtIds = Array.from(
+          new Set(
+            sameTimeAppointments
+              .map((a) => a.planTypeId)
+              .filter((id): id is number => id != null),
+          ),
+        );
+        const trialOccupiesMap =
+          await db.getPlanTypeOccupiesWholeRoomMap(trialPtIds);
+        const trialUsed = db.sumSlotOccupancy(
+          room,
+          sameTimeAppointments,
+          trialOccupiesMap,
+        );
+        if (trialUsed + 1 > room.maxCapacity) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Horário indisponível",
@@ -662,6 +676,18 @@ export const appRouter = router({
           });
         }
 
+        const spendableHere = await db.getSpendableCreditsAtUnit(
+          ctx.user.id,
+          input.unitId,
+        );
+        if (spendableHere < 1) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Os créditos do seu plano são válidos apenas na unidade em que você comprou. Escolha essa unidade ou adquira créditos para esta unidade.",
+          });
+        }
+
         // Validate appointment date is in the future
         if (input.appointmentDate < new Date()) {
           throw new TRPCError({
@@ -683,12 +709,42 @@ export const appRouter = router({
             message: "Sala não encontrada",
           });
 
+        if (room.unitId !== input.unitId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "A sala não pertence à unidade selecionada.",
+          });
+        }
+
         const sameTimeAppointments = existingAppointments.filter(
           (apt) =>
             apt.appointmentDate.getTime() === input.appointmentDate.getTime(),
         );
 
-        if (sameTimeAppointments.length >= room.maxCapacity) {
+        const planTypeId = await db.resolvePlanTypeIdForBooking(
+          ctx.user.id,
+          input.unitId,
+        );
+        const incomingWeight = await db.getSlotOccupancyWeight(
+          room,
+          planTypeId,
+        );
+
+        const creditPtIds = Array.from(
+          new Set(
+            sameTimeAppointments
+              .map((a) => a.planTypeId)
+              .filter((id): id is number => id != null),
+          ),
+        );
+        const creditOccupiesMap =
+          await db.getPlanTypeOccupiesWholeRoomMap(creditPtIds);
+        const creditUsed = db.sumSlotOccupancy(
+          room,
+          sameTimeAppointments,
+          creditOccupiesMap,
+        );
+        if (creditUsed + incomingWeight > room.maxCapacity) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Horário indisponível",
@@ -717,6 +773,7 @@ export const appRouter = router({
           roomId: input.roomId,
           professionalId: input.professionalId,
           appointmentDate: input.appointmentDate,
+          planTypeId: planTypeId ?? undefined,
           type: "plan",
           status: "scheduled",
         });
@@ -761,6 +818,18 @@ export const appRouter = router({
           });
         }
 
+        const spendableHere = await db.getSpendableCreditsAtUnit(
+          ctx.user.id,
+          input.unitId,
+        );
+        if (spendableHere < 1) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Os créditos do seu plano são válidos apenas na unidade em que você comprou. Escolha essa unidade ou adquira créditos para esta unidade.",
+          });
+        }
+
         // Validate appointment date is in the future
         if (input.appointmentDate < new Date()) {
           throw new TRPCError({
@@ -782,12 +851,42 @@ export const appRouter = router({
             message: "Sala não encontrada",
           });
 
+        if (room.unitId !== input.unitId) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "A sala não pertence à unidade selecionada.",
+          });
+        }
+
         const sameTimeAppointments = existingAppointments.filter(
           (apt) =>
             apt.appointmentDate.getTime() === input.appointmentDate.getTime(),
         );
 
-        if (sameTimeAppointments.length >= room.maxCapacity) {
+        const singlePlanTypeId = await db.resolvePlanTypeIdForBooking(
+          ctx.user.id,
+          input.unitId,
+        );
+        const singleIncomingWeight = await db.getSlotOccupancyWeight(
+          room,
+          singlePlanTypeId,
+        );
+
+        const singlePtIds = Array.from(
+          new Set(
+            sameTimeAppointments
+              .map((a) => a.planTypeId)
+              .filter((id): id is number => id != null),
+          ),
+        );
+        const singleOccupiesMap =
+          await db.getPlanTypeOccupiesWholeRoomMap(singlePtIds);
+        const singleUsed = db.sumSlotOccupancy(
+          room,
+          sameTimeAppointments,
+          singleOccupiesMap,
+        );
+        if (singleUsed + singleIncomingWeight > room.maxCapacity) {
           throw new TRPCError({
             code: "BAD_REQUEST",
             message: "Horário indisponível",
@@ -816,6 +915,7 @@ export const appRouter = router({
           roomId: input.roomId,
           professionalId: input.professionalId,
           appointmentDate: input.appointmentDate,
+          planTypeId: singlePlanTypeId ?? undefined,
           type: "single",
           status: "scheduled",
         });
@@ -955,6 +1055,16 @@ export const appRouter = router({
           endDate: input.date,
         });
 
+        const slotPlanTypeIds = Array.from(
+          new Set(
+            existingAppointments
+              .map((a) => a.planTypeId)
+              .filter((id): id is number => id != null),
+          ),
+        );
+        const slotOccupiesMap =
+          await db.getPlanTypeOccupiesWholeRoomMap(slotPlanTypeIds);
+
         // 7:00–18:00 Brazil time (America/Sao_Paulo, UTC-3); input.date is already a Date
         const brParts = new Intl.DateTimeFormat("en-CA", {
           timeZone: "America/Sao_Paulo",
@@ -999,19 +1109,25 @@ export const appRouter = router({
           );
           if (isBlocked) continue;
 
-          // Count appointments at this time
+          // Count appointments at this time (peso por tipo: individual = sala inteira)
           const appointmentsAtThisTime = existingAppointments.filter(
             (apt) =>
               new Date(apt.appointmentDate).getTime() === slotDate.getTime() &&
               apt.status !== "cancelled",
           );
 
-          const available = appointmentsAtThisTime.length < room.maxCapacity;
+          const usedCapacity = db.sumSlotOccupancy(
+            room,
+            appointmentsAtThisTime,
+            slotOccupiesMap,
+          );
+          const available = usedCapacity < room.maxCapacity;
+          const spotsLeft = Math.max(0, room.maxCapacity - usedCapacity);
 
           availableHours.push({
             time: slotDate,
             available,
-            spotsLeft: room.maxCapacity - appointmentsAtThisTime.length,
+            spotsLeft,
             maxCapacity: room.maxCapacity,
           });
         }
@@ -1212,7 +1328,7 @@ export const appRouter = router({
         });
       }
 
-      const { purchases, plans } = await import("../drizzle/schema");
+      const { purchases } = await import("../drizzle/schema");
       const { eq, and, desc } = await import("drizzle-orm");
 
       const [lastPlanPurchase] = await dbInstance
@@ -1235,20 +1351,15 @@ export const appRouter = router({
         };
       }
 
-      const [plan] = await dbInstance
-        .select()
-        .from(plans)
-        .where(eq(plans.id, lastPlanPurchase.planId))
-        .limit(1);
-
-      if (!plan) {
+      const planWithUnits = await db.getPlanById(lastPlanPurchase.planId);
+      if (!planWithUnits) {
         return {
           hasPlan: false,
           balance: user.creditsBalance || 0,
         };
       }
 
-      const planWithUnits = await db.getPlanById(plan.id);
+      const plan = planWithUnits;
       const renewalUnitId =
         plan.deletedAt != null
           ? null
@@ -1279,6 +1390,7 @@ export const appRouter = router({
           description: plan.description,
           frequency: plan.frequency,
           duration: plan.duration,
+          planType: plan.planType,
           totalClasses: plan.totalClasses,
           credits: plan.credits,
           startedAt: startDate,
@@ -1763,6 +1875,32 @@ export const appRouter = router({
       return await db.getAllPlansIncludingInactive();
     }),
 
+    listPlanCatalog: adminProcedure.query(async () => {
+      return await db.getAllPlanCatalogAdmin();
+    }),
+
+    updatePlanCatalog: adminProcedure
+      .input(
+        z.object({
+          id: z.number().int().positive(),
+          name: z.string().min(1),
+          description: z.string().nullable(),
+        }),
+      )
+      .mutation(async ({ input }) => {
+        const ok = await db.updatePlanCatalogById(input.id, {
+          name: input.name.trim(),
+          description: input.description?.trim() || null,
+        });
+        if (!ok) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Item de catálogo não encontrado ou já excluído",
+          });
+        }
+        return { success: true };
+      }),
+
     createPlan: adminProcedure
       .input(
         z.object({
@@ -1770,6 +1908,7 @@ export const appRouter = router({
           description: z.string().optional(),
           frequency: z.enum(["1x", "2x", "3x"]),
           duration: z.enum(["monthly", "quarterly", "semester"]),
+          planType: z.enum(["individual", "pair", "group"]),
           totalClasses: z.number().int().positive(),
           priceInCents: z.number().int().nonnegative(),
           installments: z.number().int().min(1),
@@ -1786,6 +1925,7 @@ export const appRouter = router({
           description: planFields.description,
           frequency: planFields.frequency,
           duration: planFields.duration,
+          planType: planFields.planType,
           totalClasses: planFields.totalClasses,
           priceInCents: planFields.priceInCents,
           installments: planFields.installments,
@@ -1805,6 +1945,7 @@ export const appRouter = router({
           description: z.string().optional().nullable(),
           frequency: z.enum(["1x", "2x", "3x"]).optional(),
           duration: z.enum(["monthly", "quarterly", "semester"]).optional(),
+          planType: z.enum(["individual", "pair", "group"]).optional(),
           totalClasses: z.number().int().positive().optional(),
           priceInCents: z.number().int().nonnegative().optional(),
           installments: z.number().int().min(1).optional(),
@@ -2079,6 +2220,7 @@ export const appRouter = router({
             user_id: ctx.user.id.toString(),
             type: "plan",
             plan_id: plan.id.toString(),
+            plan_type: plan.planType,
             unit_id: input.unitId.toString(),
             credits: plan.credits.toString(),
             installments: plan.installments.toString(),
@@ -2091,6 +2233,7 @@ export const appRouter = router({
               user_id: ctx.user.id.toString(),
               type: "plan",
               plan_id: plan.id.toString(),
+              plan_type: plan.planType,
               unit_id: input.unitId.toString(),
               credits: plan.credits.toString(),
               billing_installments: plan.installments.toString(),

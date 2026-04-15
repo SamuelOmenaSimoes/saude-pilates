@@ -11,6 +11,7 @@ import {
   notInArray,
   isNull,
   isNotNull,
+  count,
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
@@ -19,7 +20,11 @@ import {
   units,
   rooms,
   professionals,
-  plans,
+  planOffers,
+  planCatalog,
+  planFrequencies,
+  planDurations,
+  planTypes,
   planUnits,
   appointments,
   creditTransactions,
@@ -30,11 +35,12 @@ import {
   InsertRoom,
   Room,
   InsertProfessional,
-  InsertPlan,
   InsertAppointment,
   InsertCreditTransaction,
   InsertPurchase,
   InsertOperatingHour,
+  type Purchase,
+  type Appointment,
 } from "../drizzle/schema";
 import type { Plan } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -46,6 +52,9 @@ export type PlanWithUnits = Plan & {
 /** Admin: inclui vínculos plano↔unidade com soft-delete em `planUnits` */
 export type PlanWithUnitsAdmin = PlanWithUnits & {
   inactiveLinkedUnits: { id: number; name: string }[];
+  /** `planTypes.label` do catálogo */
+  planTypeCatalogLabel: string;
+  planTypeOccupiesWholeRoom: boolean;
 };
 
 async function fetchUnitsByPlanIds(
@@ -57,7 +66,7 @@ async function fetchUnitsByPlanIds(
 
   const rows = await db
     .select({
-      planId: planUnits.planId,
+      planOfferId: planUnits.planOfferId,
       unitId: units.id,
       unitName: units.name,
     })
@@ -65,16 +74,16 @@ async function fetchUnitsByPlanIds(
     .innerJoin(units, eq(planUnits.unitId, units.id))
     .where(
       and(
-        inArray(planUnits.planId, planIds),
+        inArray(planUnits.planOfferId, planIds),
         isNull(planUnits.deletedAt),
         isNull(units.deletedAt),
       ),
     );
 
   for (const r of rows) {
-    const list = byPlan.get(r.planId) ?? [];
+    const list = byPlan.get(r.planOfferId) ?? [];
     list.push({ id: r.unitId, name: r.unitName });
-    byPlan.set(r.planId, list);
+    byPlan.set(r.planOfferId, list);
   }
   return byPlan;
 }
@@ -89,7 +98,7 @@ async function fetchInactiveLinkedUnitsByPlanIds(
 
   const rows = await db
     .select({
-      planId: planUnits.planId,
+      planOfferId: planUnits.planOfferId,
       unitId: units.id,
       unitName: units.name,
     })
@@ -97,16 +106,16 @@ async function fetchInactiveLinkedUnitsByPlanIds(
     .innerJoin(units, eq(planUnits.unitId, units.id))
     .where(
       and(
-        inArray(planUnits.planId, planIds),
+        inArray(planUnits.planOfferId, planIds),
         isNotNull(planUnits.deletedAt),
         isNull(units.deletedAt),
       ),
     );
 
   for (const r of rows) {
-    const list = byPlan.get(r.planId) ?? [];
+    const list = byPlan.get(r.planOfferId) ?? [];
     list.push({ id: r.unitId, name: r.unitName });
-    byPlan.set(r.planId, list);
+    byPlan.set(r.planOfferId, list);
   }
   return byPlan;
 }
@@ -453,20 +462,115 @@ export async function createProfessional(professional: InsertProfessional) {
   return result;
 }
 
-// ==================== PLAN OPERATIONS ====================
+// ==================== PLAN OPERATIONS (catálogo + ofertas) ====================
+
+function mapJoinedPlanRow(row: {
+  id: number;
+  catalogId: number;
+  name: string;
+  description: string | null;
+  frequencyCode: string;
+  durationCode: string;
+  planTypeCode: string;
+  totalClasses: number;
+  priceInCents: number;
+  installments: number;
+  installmentPriceInCents: number;
+  credits: number;
+  isActive: boolean;
+  createdAt: Date;
+  deletedAt: Date | null;
+}): Plan {
+  return {
+    id: row.id,
+    catalogId: row.catalogId,
+    name: row.name,
+    description: row.description,
+    frequency: row.frequencyCode as Plan["frequency"],
+    duration: row.durationCode as Plan["duration"],
+    planType: row.planTypeCode as Plan["planType"],
+    totalClasses: row.totalClasses,
+    priceInCents: row.priceInCents,
+    installments: row.installments,
+    installmentPriceInCents: row.installmentPriceInCents,
+    credits: row.credits,
+    isActive: row.isActive,
+    createdAt: row.createdAt,
+    deletedAt: row.deletedAt,
+  };
+}
+
+async function resolveDimensionIds(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  codes: {
+    frequency: Plan["frequency"];
+    duration: Plan["duration"];
+    planType: Plan["planType"];
+  },
+): Promise<{ frequencyId: number; durationId: number; planTypeId: number }> {
+  const [fr] = await db
+    .select({ id: planFrequencies.id })
+    .from(planFrequencies)
+    .where(eq(planFrequencies.code, codes.frequency))
+    .limit(1);
+  const [du] = await db
+    .select({ id: planDurations.id })
+    .from(planDurations)
+    .where(eq(planDurations.code, codes.duration))
+    .limit(1);
+  const [ty] = await db
+    .select({ id: planTypes.id })
+    .from(planTypes)
+    .where(eq(planTypes.code, codes.planType))
+    .limit(1);
+  if (!fr || !du || !ty) {
+    throw new Error("Dimensão de plano inválida");
+  }
+  return {
+    frequencyId: fr.id,
+    durationId: du.id,
+    planTypeId: ty.id,
+  };
+}
 
 export async function getAllPlans(): Promise<PlanWithUnits[]> {
   const db = await getDb();
   if (!db) return [];
 
   const planRows = await db
-    .select()
-    .from(plans)
-    .where(and(eq(plans.isActive, true), isNull(plans.deletedAt)));
+    .select({
+      id: planOffers.id,
+      catalogId: planOffers.catalogId,
+      name: planCatalog.name,
+      description: planCatalog.description,
+      frequencyCode: planFrequencies.code,
+      durationCode: planDurations.code,
+      planTypeCode: planTypes.code,
+      totalClasses: planOffers.totalClasses,
+      priceInCents: planOffers.priceInCents,
+      installments: planOffers.installments,
+      installmentPriceInCents: planOffers.installmentPriceInCents,
+      credits: planOffers.credits,
+      isActive: planOffers.isActive,
+      createdAt: planOffers.createdAt,
+      deletedAt: planOffers.deletedAt,
+    })
+    .from(planOffers)
+    .innerJoin(planCatalog, eq(planOffers.catalogId, planCatalog.id))
+    .innerJoin(planFrequencies, eq(planOffers.frequencyId, planFrequencies.id))
+    .innerJoin(planDurations, eq(planOffers.durationId, planDurations.id))
+    .innerJoin(planTypes, eq(planOffers.planTypeId, planTypes.id))
+    .where(
+      and(
+        eq(planOffers.isActive, true),
+        isNull(planOffers.deletedAt),
+        isNull(planCatalog.deletedAt),
+      ),
+    );
   const ids = planRows.map((p) => p.id);
   const unitMap = await fetchUnitsByPlanIds(ids);
   return planRows.map((p) => ({
-    ...p,
+    ...mapJoinedPlanRow(p),
     units: unitMap.get(p.id) ?? [],
   }));
 }
@@ -478,22 +582,90 @@ export async function getPlanById(
   if (!db) return undefined;
 
   const result = await db
-    .select()
-    .from(plans)
-    .where(and(eq(plans.id, planId), isNull(plans.deletedAt)))
+    .select({
+      id: planOffers.id,
+      catalogId: planOffers.catalogId,
+      name: planCatalog.name,
+      description: planCatalog.description,
+      frequencyCode: planFrequencies.code,
+      durationCode: planDurations.code,
+      planTypeCode: planTypes.code,
+      totalClasses: planOffers.totalClasses,
+      priceInCents: planOffers.priceInCents,
+      installments: planOffers.installments,
+      installmentPriceInCents: planOffers.installmentPriceInCents,
+      credits: planOffers.credits,
+      isActive: planOffers.isActive,
+      createdAt: planOffers.createdAt,
+      deletedAt: planOffers.deletedAt,
+    })
+    .from(planOffers)
+    .innerJoin(planCatalog, eq(planOffers.catalogId, planCatalog.id))
+    .innerJoin(planFrequencies, eq(planOffers.frequencyId, planFrequencies.id))
+    .innerJoin(planDurations, eq(planOffers.durationId, planDurations.id))
+    .innerJoin(planTypes, eq(planOffers.planTypeId, planTypes.id))
+    .where(
+      and(
+        eq(planOffers.id, planId),
+        isNull(planOffers.deletedAt),
+        isNull(planCatalog.deletedAt),
+      ),
+    )
     .limit(1);
   if (result.length === 0) return undefined;
-  const plan = result[0];
+  const p = result[0];
   const unitMap = await fetchUnitsByPlanIds([planId]);
-  return { ...plan, units: unitMap.get(planId) ?? [] };
+  return {
+    ...mapJoinedPlanRow(p),
+    units: unitMap.get(planId) ?? [],
+  };
 }
 
-export async function createPlan(plan: InsertPlan): Promise<number> {
+export type CreatePlanInput = {
+  name: string;
+  description?: string | null;
+  frequency: Plan["frequency"];
+  duration: Plan["duration"];
+  planType: Plan["planType"];
+  totalClasses: number;
+  priceInCents: number;
+  installments: number;
+  installmentPriceInCents: number;
+  credits: number;
+  isActive?: boolean;
+};
+
+export async function createPlan(input: CreatePlanInput): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(plans).values(plan);
-  return Number(result[0].insertId);
+  const dim = await resolveDimensionIds(db, {
+    frequency: input.frequency,
+    duration: input.duration,
+    planType: input.planType,
+  });
+
+  return await db.transaction(async (tx) => {
+    const catIns = await tx.insert(planCatalog).values({
+      name: input.name,
+      description: input.description ?? null,
+    });
+    const catalogId = Number(catIns[0].insertId);
+
+    const offIns = await tx.insert(planOffers).values({
+      catalogId,
+      frequencyId: dim.frequencyId,
+      durationId: dim.durationId,
+      planTypeId: dim.planTypeId,
+      totalClasses: input.totalClasses,
+      priceInCents: input.priceInCents,
+      installments: input.installments,
+      installmentPriceInCents: input.installmentPriceInCents,
+      credits: input.credits,
+      isActive: input.isActive ?? true,
+    });
+    return Number(offIns[0].insertId);
+  });
 }
 
 export async function getAllPlansIncludingInactive(): Promise<PlanWithUnitsAdmin[]> {
@@ -501,21 +673,45 @@ export async function getAllPlansIncludingInactive(): Promise<PlanWithUnitsAdmin
   if (!db) return [];
 
   const planRows = await db
-    .select()
-    .from(plans)
-    .where(isNull(plans.deletedAt))
-    .orderBy(desc(plans.id));
+    .select({
+      id: planOffers.id,
+      catalogId: planOffers.catalogId,
+      name: planCatalog.name,
+      description: planCatalog.description,
+      frequencyCode: planFrequencies.code,
+      durationCode: planDurations.code,
+      planTypeCode: planTypes.code,
+      planTypeCatalogLabel: planTypes.label,
+      planTypeOccupiesWholeRoom: planTypes.occupiesWholeRoom,
+      totalClasses: planOffers.totalClasses,
+      priceInCents: planOffers.priceInCents,
+      installments: planOffers.installments,
+      installmentPriceInCents: planOffers.installmentPriceInCents,
+      credits: planOffers.credits,
+      isActive: planOffers.isActive,
+      createdAt: planOffers.createdAt,
+      deletedAt: planOffers.deletedAt,
+    })
+    .from(planOffers)
+    .innerJoin(planCatalog, eq(planOffers.catalogId, planCatalog.id))
+    .innerJoin(planFrequencies, eq(planOffers.frequencyId, planFrequencies.id))
+    .innerJoin(planDurations, eq(planOffers.durationId, planDurations.id))
+    .innerJoin(planTypes, eq(planOffers.planTypeId, planTypes.id))
+    .where(isNull(planOffers.deletedAt))
+    .orderBy(desc(planOffers.id));
   const ids = planRows.map((p) => p.id);
   const unitMap = await fetchUnitsByPlanIds(ids);
   const inactiveMap = await fetchInactiveLinkedUnitsByPlanIds(ids);
   return planRows.map((p) => ({
-    ...p,
+    ...mapJoinedPlanRow(p),
+    planTypeCatalogLabel: p.planTypeCatalogLabel,
+    planTypeOccupiesWholeRoom: p.planTypeOccupiesWholeRoom,
     units: unitMap.get(p.id) ?? [],
     inactiveLinkedUnits: inactiveMap.get(p.id) ?? [],
   }));
 }
 
-export async function setUnitsForPlan(planId: number, unitIds: number[]) {
+export async function setUnitsForPlan(planOfferId: number, unitIds: number[]) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -528,7 +724,10 @@ export async function setUnitsForPlan(planId: number, unitIds: number[]) {
         .update(planUnits)
         .set({ deletedAt: now })
         .where(
-          and(eq(planUnits.planId, planId), isNull(planUnits.deletedAt)),
+          and(
+            eq(planUnits.planOfferId, planOfferId),
+            isNull(planUnits.deletedAt),
+          ),
         );
       return;
     }
@@ -538,7 +737,7 @@ export async function setUnitsForPlan(planId: number, unitIds: number[]) {
       .set({ deletedAt: now })
       .where(
         and(
-          eq(planUnits.planId, planId),
+          eq(planUnits.planOfferId, planOfferId),
           notInArray(planUnits.unitId, unique),
           isNull(planUnits.deletedAt),
         ),
@@ -549,29 +748,35 @@ export async function setUnitsForPlan(planId: number, unitIds: number[]) {
         .select()
         .from(planUnits)
         .where(
-          and(eq(planUnits.planId, planId), eq(planUnits.unitId, uid)),
+          and(
+            eq(planUnits.planOfferId, planOfferId),
+            eq(planUnits.unitId, uid),
+          ),
         )
         .limit(1);
 
       if (existing.length === 0) {
-        await tx.insert(planUnits).values({ planId, unitId: uid });
+        await tx.insert(planUnits).values({ planOfferId, unitId: uid });
       } else if (existing[0].deletedAt != null) {
         await tx
           .update(planUnits)
           .set({ deletedAt: null })
           .where(
-            and(eq(planUnits.planId, planId), eq(planUnits.unitId, uid)),
+            and(
+              eq(planUnits.planOfferId, planOfferId),
+              eq(planUnits.unitId, uid),
+            ),
           );
       }
     }
   });
 }
 
-export async function setPlansForUnit(unitId: number, planIds: number[]) {
+export async function setPlansForUnit(unitId: number, planOfferIds: number[]) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const unique = Array.from(new Set(planIds));
+  const unique = Array.from(new Set(planOfferIds));
   const now = new Date();
 
   await db.transaction(async (tx) => {
@@ -591,7 +796,7 @@ export async function setPlansForUnit(unitId: number, planIds: number[]) {
       .where(
         and(
           eq(planUnits.unitId, unitId),
-          notInArray(planUnits.planId, unique),
+          notInArray(planUnits.planOfferId, unique),
           isNull(planUnits.deletedAt),
         ),
       );
@@ -601,18 +806,24 @@ export async function setPlansForUnit(unitId: number, planIds: number[]) {
         .select()
         .from(planUnits)
         .where(
-          and(eq(planUnits.planId, pid), eq(planUnits.unitId, unitId)),
+          and(
+            eq(planUnits.planOfferId, pid),
+            eq(planUnits.unitId, unitId),
+          ),
         )
         .limit(1);
 
       if (existing.length === 0) {
-        await tx.insert(planUnits).values({ planId: pid, unitId });
+        await tx.insert(planUnits).values({ planOfferId: pid, unitId });
       } else if (existing[0].deletedAt != null) {
         await tx
           .update(planUnits)
           .set({ deletedAt: null })
           .where(
-            and(eq(planUnits.planId, pid), eq(planUnits.unitId, unitId)),
+            and(
+              eq(planUnits.planOfferId, pid),
+              eq(planUnits.unitId, unitId),
+            ),
           );
       }
     }
@@ -620,23 +831,25 @@ export async function setPlansForUnit(unitId: number, planIds: number[]) {
 }
 
 export async function isUnitAllowedForPlan(
-  planId: number,
+  planOfferId: number,
   unitId: number,
 ): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
 
   const row = await db
-    .select({ x: planUnits.planId })
+    .select({ x: planUnits.planOfferId })
     .from(planUnits)
-    .innerJoin(plans, eq(planUnits.planId, plans.id))
+    .innerJoin(planOffers, eq(planUnits.planOfferId, planOffers.id))
+    .innerJoin(planCatalog, eq(planOffers.catalogId, planCatalog.id))
     .innerJoin(units, eq(planUnits.unitId, units.id))
     .where(
       and(
-        eq(planUnits.planId, planId),
+        eq(planUnits.planOfferId, planOfferId),
         eq(planUnits.unitId, unitId),
         isNull(planUnits.deletedAt),
-        isNull(plans.deletedAt),
+        isNull(planOffers.deletedAt),
+        isNull(planCatalog.deletedAt),
         isNull(units.deletedAt),
       ),
     )
@@ -644,28 +857,191 @@ export async function isUnitAllowedForPlan(
   return row.length > 0;
 }
 
-export async function updatePlan(
-  planId: number,
-  data: Partial<Omit<InsertPlan, "id" | "createdAt">>,
-) {
+export type UpdatePlanInput = Partial<{
+  name: string;
+  description: string | null;
+  frequency: Plan["frequency"];
+  duration: Plan["duration"];
+  planType: Plan["planType"];
+  totalClasses: number;
+  priceInCents: number;
+  installments: number;
+  installmentPriceInCents: number;
+  credits: number;
+  isActive: boolean;
+}>;
+
+export async function updatePlan(planOfferId: number, data: UpdatePlanInput) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  await db
-    .update(plans)
-    .set(data)
-    .where(and(eq(plans.id, planId), isNull(plans.deletedAt)));
+  const [existing] = await db
+    .select({
+      catalogId: planOffers.catalogId,
+    })
+    .from(planOffers)
+    .where(and(eq(planOffers.id, planOfferId), isNull(planOffers.deletedAt)))
+    .limit(1);
+  if (!existing) return;
+
+  const freq =
+    data.frequency !== undefined
+      ? (
+          await db
+            .select({ id: planFrequencies.id })
+            .from(planFrequencies)
+            .where(eq(planFrequencies.code, data.frequency))
+            .limit(1)
+        )[0]?.id
+      : undefined;
+  const dur =
+    data.duration !== undefined
+      ? (
+          await db
+            .select({ id: planDurations.id })
+            .from(planDurations)
+            .where(eq(planDurations.code, data.duration))
+            .limit(1)
+        )[0]?.id
+      : undefined;
+  const pty =
+    data.planType !== undefined
+      ? (
+          await db
+            .select({ id: planTypes.id })
+            .from(planTypes)
+            .where(eq(planTypes.code, data.planType))
+            .limit(1)
+        )[0]?.id
+      : undefined;
+
+  if (data.frequency !== undefined && freq === undefined) {
+    throw new Error("Frequência inválida");
+  }
+  if (data.duration !== undefined && dur === undefined) {
+    throw new Error("Duração inválida");
+  }
+  if (data.planType !== undefined && pty === undefined) {
+    throw new Error("Tipo de plano inválido");
+  }
+
+  if (data.name !== undefined || data.description !== undefined) {
+    const catPatch: Record<string, unknown> = {};
+    if (data.name !== undefined) catPatch.name = data.name;
+    if (data.description !== undefined) catPatch.description = data.description;
+    await db
+      .update(planCatalog)
+      .set(catPatch)
+      .where(eq(planCatalog.id, existing.catalogId));
+  }
+
+  const offerPatch: Record<string, unknown> = {};
+  if (data.totalClasses !== undefined) offerPatch.totalClasses = data.totalClasses;
+  if (data.priceInCents !== undefined) offerPatch.priceInCents = data.priceInCents;
+  if (data.installments !== undefined) offerPatch.installments = data.installments;
+  if (data.installmentPriceInCents !== undefined) {
+    offerPatch.installmentPriceInCents = data.installmentPriceInCents;
+  }
+  if (data.credits !== undefined) offerPatch.credits = data.credits;
+  if (data.isActive !== undefined) offerPatch.isActive = data.isActive;
+  if (freq !== undefined) offerPatch.frequencyId = freq;
+  if (dur !== undefined) offerPatch.durationId = dur;
+  if (pty !== undefined) offerPatch.planTypeId = pty;
+
+  if (Object.keys(offerPatch).length > 0) {
+    await db
+      .update(planOffers)
+      .set(offerPatch)
+      .where(and(eq(planOffers.id, planOfferId), isNull(planOffers.deletedAt)));
+  }
 }
 
-export async function softDeletePlan(planId: number) {
+export async function softDeletePlan(planOfferId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db
-    .update(plans)
-    .set({ deletedAt: new Date() })
-    .where(and(eq(plans.id, planId), isNull(plans.deletedAt)));
-  return result;
+  const now = new Date();
+  const [row] = await db
+    .select({ catalogId: planOffers.catalogId })
+    .from(planOffers)
+    .where(and(eq(planOffers.id, planOfferId), isNull(planOffers.deletedAt)))
+    .limit(1);
+  if (!row) return;
+
+  await db
+    .update(planOffers)
+    .set({ deletedAt: now })
+    .where(and(eq(planOffers.id, planOfferId), isNull(planOffers.deletedAt)));
+  await db
+    .update(planCatalog)
+    .set({ deletedAt: now })
+    .where(eq(planCatalog.id, row.catalogId));
+}
+
+export type PlanCatalogAdminRow = {
+  id: number;
+  name: string;
+  description: string | null;
+  createdAt: Date;
+  deletedAt: Date | null;
+  offerCount: number;
+};
+
+/** Itens de catálogo ativos com contagem de ofertas (planOffers não excluídas). */
+export async function getAllPlanCatalogAdmin(): Promise<PlanCatalogAdminRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const catalogs = await db
+    .select()
+    .from(planCatalog)
+    .where(isNull(planCatalog.deletedAt))
+    .orderBy(desc(planCatalog.id));
+
+  if (catalogs.length === 0) return [];
+
+  const ids = catalogs.map((c) => c.id);
+  const countRows = await db
+    .select({
+      catalogId: planOffers.catalogId,
+      cnt: count(planOffers.id),
+    })
+    .from(planOffers)
+    .where(and(inArray(planOffers.catalogId, ids), isNull(planOffers.deletedAt)))
+    .groupBy(planOffers.catalogId);
+
+  const countMap = new Map(
+    countRows.map((r) => [r.catalogId, Number(r.cnt)]),
+  );
+  return catalogs.map((c) => ({
+    id: c.id,
+    name: c.name,
+    description: c.description,
+    createdAt: c.createdAt,
+    deletedAt: c.deletedAt,
+    offerCount: countMap.get(c.id) ?? 0,
+  }));
+}
+
+export async function updatePlanCatalogById(
+  catalogId: number,
+  data: { name: string; description: string | null },
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [existing] = await db
+    .select({ id: planCatalog.id })
+    .from(planCatalog)
+    .where(and(eq(planCatalog.id, catalogId), isNull(planCatalog.deletedAt)))
+    .limit(1);
+  if (!existing) return false;
+
+  await db
+    .update(planCatalog)
+    .set({ name: data.name, description: data.description })
+    .where(eq(planCatalog.id, catalogId));
+  return true;
 }
 
 export async function softDeleteUnit(unitId: number) {
@@ -766,6 +1142,24 @@ export async function getAppointmentById(appointmentId: number) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function getAppointmentsByIds(
+  appointmentIds: number[],
+): Promise<Map<number, Appointment>> {
+  const map = new Map<number, Appointment>();
+  if (appointmentIds.length === 0) return map;
+  const db = await getDb();
+  if (!db) return map;
+
+  const rows = await db
+    .select()
+    .from(appointments)
+    .where(inArray(appointments.id, appointmentIds));
+  for (const a of rows) {
+    map.set(a.id, a);
+  }
+  return map;
+}
+
 export async function getAppointmentsByUserId(userId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -847,6 +1241,86 @@ export async function getAppointmentsByRoomAndDate(roomId: number, date: Date) {
       ),
     )
     .orderBy(asc(appointments.appointmentDate));
+}
+
+/** Mapa planTypeId → ocupa sala inteira (peso = maxCapacity no horário). */
+export async function getPlanTypeOccupiesWholeRoomMap(
+  planTypeIds: number[],
+): Promise<Map<number, boolean>> {
+  const db = await getDb();
+  const result = new Map<number, boolean>();
+  if (!db || planTypeIds.length === 0) return result;
+
+  const rows = await db
+    .select({
+      id: planTypes.id,
+      occupiesWholeRoom: planTypes.occupiesWholeRoom,
+    })
+    .from(planTypes)
+    .where(inArray(planTypes.id, planTypeIds));
+
+  for (const r of rows) {
+    result.set(r.id, r.occupiesWholeRoom);
+  }
+  return result;
+}
+
+/**
+ * Soma de “vagas” ocupadas no mesmo horário: tipo com occupiesWholeRoom conta `maxCapacity`, demais contam 1.
+ */
+export function sumSlotOccupancy(
+  room: Room,
+  sameTimeAppointments: Appointment[],
+  occupiesWholeByPlanTypeId: Map<number, boolean>,
+): number {
+  let total = 0;
+  for (const apt of sameTimeAppointments) {
+    if (apt.status === "cancelled") continue;
+    const ptId = apt.planTypeId;
+    if (ptId != null && occupiesWholeByPlanTypeId.get(ptId)) {
+      total += room.maxCapacity;
+    } else {
+      total += 1;
+    }
+  }
+  return total;
+}
+
+export async function getSlotOccupancyWeight(
+  room: Room,
+  planTypeId: number | null,
+): Promise<number> {
+  if (planTypeId == null) return 1;
+  const map = await getPlanTypeOccupiesWholeRoomMap([planTypeId]);
+  return map.get(planTypeId) ? room.maxCapacity : 1;
+}
+
+/**
+ * Última compra concluída com plano nesta unidade — define o tipo de aula para agendamento com créditos.
+ */
+export async function resolvePlanTypeIdForBooking(
+  userId: number,
+  unitId: number,
+): Promise<number | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const rows = await db
+    .select({ planTypeId: planOffers.planTypeId })
+    .from(purchases)
+    .innerJoin(planOffers, eq(purchases.planId, planOffers.id))
+    .where(
+      and(
+        eq(purchases.userId, userId),
+        eq(purchases.unitId, unitId),
+        eq(purchases.status, "completed"),
+        isNotNull(purchases.planId),
+      ),
+    )
+    .orderBy(desc(purchases.createdAt))
+    .limit(1);
+
+  return rows[0]?.planTypeId ?? null;
 }
 
 export async function cancelAppointment(
@@ -938,6 +1412,18 @@ export async function getRecentCreditTransactions(
     .limit(limit);
 }
 
+/** Ordem cronológica para simular saldos por unidade + pool global. */
+export async function getCreditTransactionsByUserIdAsc(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db
+    .select()
+    .from(creditTransactions)
+    .where(eq(creditTransactions.userId, userId))
+    .orderBy(asc(creditTransactions.createdAt), asc(creditTransactions.id));
+}
+
 // ==================== PURCHASE OPERATIONS ====================
 
 export async function createPurchase(purchase: InsertPurchase) {
@@ -958,6 +1444,24 @@ export async function getPurchaseById(purchaseId: number) {
     .where(eq(purchases.id, purchaseId))
     .limit(1);
   return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getPurchasesByIds(
+  purchaseIds: number[],
+): Promise<Map<number, Purchase>> {
+  const map = new Map<number, Purchase>();
+  if (purchaseIds.length === 0) return map;
+  const db = await getDb();
+  if (!db) return map;
+
+  const rows = await db
+    .select()
+    .from(purchases)
+    .where(inArray(purchases.id, purchaseIds));
+  for (const p of rows) {
+    map.set(p.id, p);
+  }
+  return map;
 }
 
 export async function getPurchaseByStripeSessionId(sessionId: string) {
@@ -1143,6 +1647,84 @@ export async function refundCreditsToUser(
   return newBalance;
 }
 
+/**
+ * Créditos utilizáveis em uma unidade: saldo da unidade (compras de plano/avulsa com `purchase.unitId`)
+ * mais pool global (ajustes manuais, compras sem unidade, compras antigas). Consumo de agendamento
+ * desconta primeiro do saldo da unidade do agendamento, depois do global — alinhado ao histórico real.
+ */
+export async function getSpendableCreditsAtUnit(
+  userId: number,
+  unitId: number,
+): Promise<number> {
+  const txs = await getCreditTransactionsByUserIdAsc(userId);
+  const purchaseIds = Array.from(
+    new Set(
+      txs.map((t) => t.purchaseId).filter((id): id is number => id != null),
+    ),
+  );
+  const appointmentIds = Array.from(
+    new Set(
+      txs.map((t) => t.appointmentId).filter((id): id is number => id != null),
+    ),
+  );
+
+  const purchaseMap = await getPurchasesByIds(purchaseIds);
+  const appointmentMap = await getAppointmentsByIds(appointmentIds);
+
+  let global = 0;
+  const unitBal = new Map<number, number>();
+
+  const getU = (u: number) => unitBal.get(u) ?? 0;
+  const addU = (u: number, delta: number) => {
+    const next = getU(u) + delta;
+    if (next <= 0) unitBal.delete(u);
+    else unitBal.set(u, next);
+  };
+
+  for (const t of txs) {
+    const amt = t.amount;
+    if (t.type === "plan_purchase" || t.type === "single_purchase") {
+      const p = t.purchaseId != null ? purchaseMap.get(t.purchaseId) : undefined;
+      const uid = p?.unitId ?? null;
+      if (uid != null) {
+        addU(uid, amt);
+      } else {
+        global += amt;
+      }
+    } else if (t.type === "manual_adjustment") {
+      global += amt;
+    } else if (t.type === "appointment_booking") {
+      const apt =
+        t.appointmentId != null ? appointmentMap.get(t.appointmentId) : undefined;
+      const uid = apt?.unitId;
+      if (uid == null) {
+        global += amt;
+        continue;
+      }
+      const need = -amt;
+      if (need <= 0) {
+        global += amt;
+        continue;
+      }
+      const uAvail = getU(uid);
+      const takeFromUnit = Math.min(need, uAvail);
+      addU(uid, -takeFromUnit);
+      global -= need - takeFromUnit;
+    } else if (t.type === "appointment_cancellation") {
+      const apt =
+        t.appointmentId != null ? appointmentMap.get(t.appointmentId) : undefined;
+      const uid = apt?.unitId;
+      if (uid != null) {
+        addU(uid, amt);
+      } else {
+        global += amt;
+      }
+    }
+  }
+
+  return getU(unitId) + global;
+}
+
 // ==================== RECURRING SCHEDULES OPERATIONS ====================
 
 /**
@@ -1314,33 +1896,78 @@ export async function generateRecurringAppointments(
               apt.status === "scheduled",
           );
 
-          if (sameTimeAppointments.length >= room.maxCapacity) {
+          const recurringPlanTypeId = await resolvePlanTypeIdForBooking(
+            schedule.userId,
+            schedule.unitId,
+          );
+          const recurringIncoming = await getSlotOccupancyWeight(
+            room,
+            recurringPlanTypeId,
+          );
+          const recurringPtIds = Array.from(
+            new Set(
+              sameTimeAppointments
+                .map((a) => a.planTypeId)
+                .filter((id): id is number => id != null),
+            ),
+          );
+          const recurringOccupiesMap =
+            await getPlanTypeOccupiesWholeRoomMap(recurringPtIds);
+          const recurringUsed = sumSlotOccupancy(
+            room,
+            sameTimeAppointments,
+            recurringOccupiesMap,
+          );
+
+          if (recurringUsed + recurringIncoming > room.maxCapacity) {
             skippedAppointments.push({
               userId: schedule.userId,
               date: appointmentDate,
               reason: "room_full",
             });
           } else {
-            // Create appointment
-            const appointment = await createAppointment({
-              userId: schedule.userId,
-              unitId: schedule.unitId,
-              roomId: schedule.roomId,
-              professionalId: schedule.professionalId,
-              appointmentDate,
-              type: "plan",
-              status: "scheduled",
-            });
+            const schedUser = await getUserById(schedule.userId);
+            if (!schedUser || schedUser.creditsBalance < 1) {
+              skippedAppointments.push({
+                userId: schedule.userId,
+                date: appointmentDate,
+                reason: "insufficient_credits",
+              });
+            } else {
+              const spendableHere = await getSpendableCreditsAtUnit(
+                schedule.userId,
+                schedule.unitId,
+              );
+              if (spendableHere < 1) {
+                skippedAppointments.push({
+                  userId: schedule.userId,
+                  date: appointmentDate,
+                  reason: "insufficient_credits_at_unit",
+                });
+              } else {
+                // Create appointment
+                const appointment = await createAppointment({
+                  userId: schedule.userId,
+                  unitId: schedule.unitId,
+                  roomId: schedule.roomId,
+                  professionalId: schedule.professionalId,
+                  appointmentDate,
+                  planTypeId: recurringPlanTypeId ?? undefined,
+                  type: "plan",
+                  status: "scheduled",
+                });
 
-            // Consume 1 credit
-            await consumeCreditsFromUser(
-              schedule.userId,
-              1,
-              appointment.id,
-              `Agendamento recorrente automático - ${appointmentDate.toLocaleString("pt-BR")}`,
-            );
+                // Consume 1 credit
+                await consumeCreditsFromUser(
+                  schedule.userId,
+                  1,
+                  appointment.id,
+                  `Agendamento recorrente automático - ${appointmentDate.toLocaleString("pt-BR")}`,
+                );
 
-            createdAppointments.push(appointment);
+                createdAppointments.push(appointment);
+              }
+            }
           }
         }
       }

@@ -80,36 +80,102 @@ export type Professional = typeof professionals.$inferSelect;
 export type InsertProfessional = typeof professionals.$inferInsert;
 
 /**
- * Plans (Planos) - Subscription plans with different frequencies
+ * Dimensões de preço: frequência, duração, tipo de plano (catálogo configurável).
  */
-export const plans = mysqlTable("plans", {
+export const planFrequencies = mysqlTable("planFrequencies", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 32 }).notNull().unique(),
+  label: varchar("label", { length: 255 }).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+});
+
+export const planDurations = mysqlTable("planDurations", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 32 }).notNull().unique(),
+  label: varchar("label", { length: 255 }).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+});
+
+export const planTypes = mysqlTable("planTypes", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 32 }).notNull().unique(),
+  label: varchar("label", { length: 255 }).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  /** Se true, uma reserva conta como ocupar todas as vagas do horário (ex.: Individual = sala inteira). */
+  occupiesWholeRoom: boolean("occupiesWholeRoom").default(false).notNull(),
+});
+
+/**
+ * Catálogo — nome e descrição de vitrine (compartilhável entre várias ofertas).
+ */
+export const planCatalog = mysqlTable("planCatalog", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  frequency: mysqlEnum("frequency", ["1x", "2x", "3x"]).notNull(), // Frequência semanal
-  duration: mysqlEnum("duration", ["monthly", "quarterly", "semester"]).notNull(),
-  totalClasses: int("totalClasses").notNull(), // Total de aulas no plano
-  priceInCents: int("priceInCents").notNull(), // Preço em centavos
-  installments: int("installments").default(1).notNull(), // Número de parcelas
-  installmentPriceInCents: int("installmentPriceInCents").notNull(), // Valor da parcela em centavos
-  credits: int("credits").notNull(), // Créditos que o plano adiciona
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  deletedAt: timestamp("deletedAt"),
+});
+
+/**
+ * Oferta vendável (SKU): dimensões + preço + créditos. `id` é o que compras/checkout referenciam.
+ */
+export const planOffers = mysqlTable("planOffers", {
+  id: int("id").autoincrement().primaryKey(),
+  catalogId: int("catalogId")
+    .notNull()
+    .references(() => planCatalog.id, { onDelete: "cascade" }),
+  frequencyId: int("frequencyId")
+    .notNull()
+    .references(() => planFrequencies.id),
+  durationId: int("durationId")
+    .notNull()
+    .references(() => planDurations.id),
+  planTypeId: int("planTypeId")
+    .notNull()
+    .references(() => planTypes.id),
+  totalClasses: int("totalClasses").notNull(),
+  priceInCents: int("priceInCents").notNull(),
+  installments: int("installments").default(1).notNull(),
+  installmentPriceInCents: int("installmentPriceInCents").notNull(),
+  credits: int("credits").notNull(),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   deletedAt: timestamp("deletedAt"),
 });
 
-export type Plan = typeof plans.$inferSelect;
-export type InsertPlan = typeof plans.$inferInsert;
+export type PlanCatalog = typeof planCatalog.$inferSelect;
+export type InsertPlanCatalog = typeof planCatalog.$inferInsert;
+export type PlanOffer = typeof planOffers.$inferSelect;
+export type InsertPlanOffer = typeof planOffers.$inferInsert;
+
+/** Formato agregado para API: oferta + catálogo + códigos das dimensões (compatível com o antigo `Plan`). */
+export type Plan = {
+  id: number;
+  catalogId: number;
+  name: string;
+  description: string | null;
+  frequency: "1x" | "2x" | "3x";
+  duration: "monthly" | "quarterly" | "semester";
+  planType: "individual" | "pair" | "group";
+  totalClasses: number;
+  priceInCents: number;
+  installments: number;
+  installmentPriceInCents: number;
+  credits: number;
+  isActive: boolean;
+  createdAt: Date;
+  deletedAt: Date | null;
+};
 
 /**
- * Plan ↔ Unit (N:N) — quais unidades aceitam cada plano
+ * Plan offer ↔ Unit (N:N) — quais unidades aceitam cada oferta
  */
 export const planUnits = mysqlTable(
   "planUnits",
   {
-    planId: int("planId")
+    planOfferId: int("planOfferId")
       .notNull()
-      .references(() => plans.id, { onDelete: "cascade" }),
+      .references(() => planOffers.id, { onDelete: "cascade" }),
     unitId: int("unitId")
       .notNull()
       .references(() => units.id, { onDelete: "cascade" }),
@@ -117,7 +183,7 @@ export const planUnits = mysqlTable(
     deletedAt: timestamp("deletedAt"),
   },
   (t) => ({
-    pk: primaryKey({ columns: [t.planId, t.unitId] }),
+    pk: primaryKey({ columns: [t.planOfferId, t.unitId] }),
   }),
 );
 
@@ -134,6 +200,10 @@ export const appointments = mysqlTable("appointments", {
   roomId: int("roomId").notNull(),
   professionalId: int("professionalId").notNull(),
   appointmentDate: timestamp("appointmentDate").notNull(), // Data e hora do agendamento
+  /** Formato da aula (catálogo planTypes); define peso de ocupação no horário (ex. individual = sala inteira). */
+  planTypeId: int("planTypeId").references(() => planTypes.id, {
+    onDelete: "set null",
+  }),
   status: mysqlEnum("status", ["scheduled", "completed", "cancelled", "no_show"]).default("scheduled").notNull(),
   type: mysqlEnum("type", ["trial", "single", "plan"]).notNull(), // Tipo: experimental, avulsa, plano
   cancelledAt: timestamp("cancelledAt"),
@@ -170,7 +240,9 @@ export const purchases = mysqlTable("purchases", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
   type: mysqlEnum("type", ["plan", "single"]).notNull(),
-  planId: int("planId"), // Se for compra de plano
+  planId: int("planId").references(() => planOffers.id, {
+    onDelete: "set null",
+  }), // planOffers.id
   /** Unidade escolhida na compra do plano (checkout) */
   unitId: int("unitId").references(() => units.id, {
     onDelete: "set null",
@@ -211,7 +283,9 @@ export type InsertOperatingHour = typeof operatingHours.$inferInsert;
 export const manualPayments = mysqlTable("manualPayments", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
-  planId: int("planId").notNull(),
+  planId: int("planId")
+    .notNull()
+    .references(() => planOffers.id, { onDelete: "restrict" }),
   amountInCents: int("amountInCents").notNull(),
   paymentMethod: mysqlEnum("paymentMethod", ["cash", "pix", "transfer"]).notNull(),
   creditsAdded: int("creditsAdded").notNull(),

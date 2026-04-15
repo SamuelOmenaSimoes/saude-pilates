@@ -78,6 +78,20 @@
       "when": 1775166651087,
       "tag": "0010_plan_units_deleted_at",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1775166651088,
+      "tag": "0011_plan_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "5",
+      "when": 1775166651089,
+      "tag": "0012_plan_types_occupies_whole_room",
+      "breakpoints": true
     }
   ]
 }

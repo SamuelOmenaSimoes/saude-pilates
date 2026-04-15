@@ -32,6 +32,7 @@ export const PLAN_PRODUCTS: Record<string, StripeProduct> = {
     credits: 4,
     metadata: {
       type: "plan",
+      plan_type: "group",
       frequency: "1x",
       duration: "monthly",
     },
@@ -43,6 +44,7 @@ export const PLAN_PRODUCTS: Record<string, StripeProduct> = {
     credits: 12,
     metadata: {
       type: "plan",
+      plan_type: "group",
       frequency: "1x",
       duration: "quarterly",
       installments: "3",
@@ -55,6 +57,7 @@ export const PLAN_PRODUCTS: Record<string, StripeProduct> = {
     credits: 24,
     metadata: {
       type: "plan",
+      plan_type: "group",
       frequency: "1x",
       duration: "semester",
       installments: "6",
@@ -69,6 +72,7 @@ export const PLAN_PRODUCTS: Record<string, StripeProduct> = {
     credits: 8,
     metadata: {
       type: "plan",
+      plan_type: "group",
       frequency: "2x",
       duration: "monthly",
     },
@@ -80,6 +84,7 @@ export const PLAN_PRODUCTS: Record<string, StripeProduct> = {
     credits: 24,
     metadata: {
       type: "plan",
+      plan_type: "group",
       frequency: "2x",
       duration: "quarterly",
       installments: "3",
@@ -92,6 +97,7 @@ export const PLAN_PRODUCTS: Record<string, StripeProduct> = {
     credits: 48,
     metadata: {
       type: "plan",
+      plan_type: "group",
       frequency: "2x",
       duration: "semester",
       installments: "6",
@@ -106,6 +112,7 @@ export const PLAN_PRODUCTS: Record<string, StripeProduct> = {
     credits: 12,
     metadata: {
       type: "plan",
+      plan_type: "group",
       frequency: "3x",
       duration: "monthly",
     },
@@ -117,6 +124,7 @@ export const PLAN_PRODUCTS: Record<string, StripeProduct> = {
     credits: 36,
     metadata: {
       type: "plan",
+      plan_type: "group",
       frequency: "3x",
       duration: "quarterly",
       installments: "3",
@@ -129,6 +137,7 @@ export const PLAN_PRODUCTS: Record<string, StripeProduct> = {
     credits: 72,
     metadata: {
       type: "plan",
+      plan_type: "group",
       frequency: "3x",
       duration: "semester",
       installments: "6",

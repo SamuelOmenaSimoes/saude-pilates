@@ -4,6 +4,18 @@ import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { toast } from "sonner";
 
+const frequencyLabels: Record<string, string> = {
+  "1x": "1x por semana",
+  "2x": "2x por semana",
+  "3x": "3x por semana",
+};
+
+const planTypeLabels: Record<string, string> = {
+  individual: "Individual",
+  pair: "Dupla",
+  group: "Em grupo",
+};
+
 export function MyPlan() {
   const { data: balanceData, isLoading: loadingBalance } =
     trpc.credits.balance.useQuery();
@@ -101,7 +113,18 @@ export function MyPlan() {
                 <p className="text-sm">
                   Frequência:{" "}
                   <span className="font-medium">
-                    {planData.plan.frequency}x por semana
+                    {frequencyLabels[planData.plan.frequency] ??
+                      planData.plan.frequency}
+                  </span>
+                </p>
+
+                <p className="text-sm">
+                  Tipo:{" "}
+                  <span className="font-medium">
+                    {planData.plan.planType
+                      ? planTypeLabels[planData.plan.planType] ??
+                        planData.plan.planType
+                      : "—"}
                   </span>
                 </p>
 
