@@ -26,6 +26,11 @@ Sistema de agendamento de aulas para o estúdio Saúde e Pilates. Inclui cadastr
    cd saude-pilates
    npm install
    ```
+   ```bash
+   git clone <url-do-repositorio>
+   cd saude-pilates
+   npm install
+   ```
 
 
 2. **Variáveis de ambiente**
