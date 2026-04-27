@@ -163,6 +163,19 @@ export default function Home() {
                 </div>
               </div>
             </div>
+            <div className="group relative overflow-hidden rounded-2xl shadow-lg transition-smooth hover:shadow-2xl">
+              <img 
+                src="clinicasuissa.jpeg" 
+                alt="Sala de Pilates - Ambiente Profissional" 
+                className="h-[400px] w-full object-cover transition-smooth group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent">
+                <div className="absolute bottom-0 left-0 right-0 p-6">
+                  <h3 className="text-2xl font-bold text-white mb-2">Sala Única - Vila Suissa</h3>
+                  <p className="text-white/90">Ambiente profissional e exclusivo</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -194,10 +207,10 @@ export default function Home() {
             <div className="grid gap-4 sm:grid-cols-2">
               <Card className="border-2">
                 <CardContent className="pt-6">
-                  <div className="mb-4 text-4xl font-bold text-primary">2</div>
+                  <div className="mb-4 text-4xl font-bold text-primary">3</div>
                   <h3 className="mb-2 font-semibold">Unidades</h3>
                   <p className="text-sm text-muted-foreground">
-                    Vila Oliveira e Vila Caputera
+                    Vila Oliveira, Vila Caputera e Vila Suissa
                   </p>
                 </CardContent>
               </Card>
@@ -224,7 +237,7 @@ export default function Home() {
 
               <Card className="border-2">
                 <CardContent className="pt-6">
-                  <div className="mb-4 text-4xl font-bold text-primary">9</div>
+                  <div className="mb-4 text-4xl font-bold text-primary">+9</div>
                   <h3 className="mb-2 font-semibold">Planos Disponíveis</h3>
                   <p className="text-sm text-muted-foreground">
                     Flexibilidade para você

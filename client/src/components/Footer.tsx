@@ -95,6 +95,12 @@ export default function Footer() {
                   R. Kikuji Iwanami, 256 D - Vila Caputera
                 </span>
               </li>
+              <li className="flex items-start gap-2">
+                <MapPin className="h-4 w-4 mt-0.5 text-primary flex-shrink-0" />
+                <span className="text-muted-foreground">
+                  Rua Antônio Máximo, 345B - Vila Suissa
+                </span>
+              </li>
             </ul>
           </div>
         </div>

@@ -81,9 +81,10 @@ export default function Contact() {
                 </div>
                 <h3 className="mb-2 font-semibold">Unidades</h3>
                 <p className="text-sm text-muted-foreground">
-                  2 unidades<br />
+                  3 unidades<br />
                   Vila Oliveira<br />
-                  Vila Caputera
+                  Vila Caputera<br />
+                  Vila Suissa
                 </p>
               </CardContent>
             </Card>
@@ -155,6 +156,46 @@ export default function Contact() {
                       <p className="text-sm text-muted-foreground">
                         R. Kikuji Iwanami, 256 D<br />
                         Vila Caputera
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <Clock className="h-5 w-5 mt-0.5 text-primary flex-shrink-0" />
+                    <div>
+                      <p className="font-medium">Horário de Funcionamento</p>
+                      <p className="text-sm text-muted-foreground">
+                        Segunda a Sexta: 7h às 21h<br />
+                        Sábado: 8h às 12h<br />
+                        Domingo: Fechado
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <Users className="h-5 w-5 mt-0.5 text-primary flex-shrink-0" />
+                    <div>
+                      <p className="font-medium">Profissional</p>
+                      <p className="text-sm text-muted-foreground">
+                        Phyllis Souza
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-2">
+              <CardContent className="pt-6">
+                <h3 className="mb-4 text-2xl font-semibold">Vila Suissa</h3>
+                
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3">
+                    <MapPin className="h-5 w-5 mt-0.5 text-primary flex-shrink-0" />
+                    <div>
+                      <p className="font-medium">Endereço</p>
+                      <p className="text-sm text-muted-foreground">
+                        Rua Antônio Máximo, 345B<br />
+                        Vila Suissa
                       </p>
                     </div>
                   </div>

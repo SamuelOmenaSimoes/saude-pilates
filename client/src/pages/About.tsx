@@ -154,7 +154,7 @@ export default function About() {
                 </p>
                 <div className="space-y-2 text-sm">
                   <p><strong>Salas:</strong> 2 salas equipadas</p>
-                  <p><strong>Profissionais:</strong> Faila Adachi e Mariana Sabanae</p>
+                  <p><strong>Doutoras:</strong> Faila Adachi e Mariana Sabanae</p>
                   <p><strong>Horários:</strong></p>
                   <ul className="ml-4 list-disc text-muted-foreground">
                     <li>Segunda a Sexta: 7h às 21h</li>
@@ -173,7 +173,25 @@ export default function About() {
                 </p>
                 <div className="space-y-2 text-sm">
                   <p><strong>Salas:</strong> 1 sala equipada</p>
-                  <p><strong>Profissional:</strong> Phyllis Souza</p>
+                  <p><strong>Doutora:</strong> Phyllis Souza</p>
+                  <p><strong>Horários:</strong></p>
+                  <ul className="ml-4 list-disc text-muted-foreground">
+                    <li>Segunda a Sexta: 7h às 21h</li>
+                    <li>Sábado: 8h às 12h</li>
+                    <li>Domingo: Fechado</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-2">
+              <CardContent className="pt-6">
+                <h3 className="mb-4 text-2xl font-semibold">Vila Suissa</h3>
+                <p className="mb-4 text-muted-foreground">
+                  Rua Antônio Máximo, 345B - Vila Suissa
+                </p>
+                <div className="space-y-2 text-sm">
+                  <p><strong>Salas:</strong> 1 sala equipada</p>
+                  <p><strong>Doutora:</strong> Phyllis Souza</p>
                   <p><strong>Horários:</strong></p>
                   <ul className="ml-4 list-disc text-muted-foreground">
                     <li>Segunda a Sexta: 7h às 21h</li>
