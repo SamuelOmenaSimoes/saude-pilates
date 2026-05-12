@@ -2,7 +2,16 @@ import jwt from 'jsonwebtoken';
 import type { Request, Response } from 'express';
 import { getSessionCookieOptions } from './_core/cookies';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+// JWT_SECRET must be set in environment variables for security
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error(
+    'CRITICAL: JWT_SECRET environment variable is not set. ' +
+    'This is required for session security in both development and production.'
+  );
+}
+
 const COOKIE_NAME = 'session';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;

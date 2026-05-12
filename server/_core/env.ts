@@ -7,4 +7,8 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // Admin credentials should be set in environment variables
+  // Example: ADMIN_USERNAME=admin ADMIN_PASSWORD_HASH=<bcrypt hash>
+  adminUsername: process.env.ADMIN_USERNAME ?? "",
+  adminPasswordHash: process.env.ADMIN_PASSWORD_HASH ?? "",
 };

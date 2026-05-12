@@ -10,6 +10,8 @@ import {
   purchases,
   appointments,
   passwordResetTokens,
+  type Appointment,
+  type Purchase,
 } from "../drizzle/schema";
 import { eq, desc } from "drizzle-orm";
 import { sdk } from "./_core/sdk";
@@ -213,13 +215,37 @@ export const appRouter = router({
     adminLogin: publicProcedure
       .input(
         z.object({
-          username: z.string(),
-          password: z.string(),
+          username: z.string().min(1),
+          password: z.string().min(1),
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        // Verificar credenciais fixas do admin
-        if (input.username !== "admin261" || input.password !== "pacientes1") {
+        // Validate admin credentials from environment variables
+        const { ENV } = await import("./_core/env");
+        const { comparePassword } = await import("./auth-helpers");
+
+        // Admin credentials must be configured in environment
+        if (!ENV.adminUsername || !ENV.adminPasswordHash) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Admin authentication not configured",
+          });
+        }
+
+        // Check username
+        if (input.username !== ENV.adminUsername) {
+          throw new TRPCError({
+            code: "UNAUTHORIZED",
+            message: "Credenciais inválidas",
+          });
+        }
+
+        // Check password using bcrypt (constant-time comparison)
+        const isValidPassword = await comparePassword(
+          input.password,
+          ENV.adminPasswordHash,
+        );
+        if (!isValidPassword) {
           throw new TRPCError({
             code: "UNAUTHORIZED",
             message: "Credenciais inválidas",
@@ -227,7 +253,7 @@ export const appRouter = router({
         }
 
         // Buscar ou criar usuário admin
-        const adminOpenId = "admin261_system";
+        const adminOpenId = "admin_system";
         let adminUser = await db.getUserByOpenId(adminOpenId);
 
         if (!adminUser) {
@@ -384,7 +410,7 @@ export const appRouter = router({
         const dbInstance = await db.getDb();
         if (!dbInstance) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
 
-        const updateData: any = {};
+        const updateData: Record<string, unknown> = {};
         if (input.name) updateData.name = input.name;
         if (input.phone) {
           const { validatePhone, unmaskPhone } = await import("./validators");
@@ -535,7 +561,7 @@ export const appRouter = router({
         // Check if user already has a trial appointment (scheduled or completed)
         const userAppointments = await db.getAppointmentsByUserId(ctx.user.id);
         const hasTrialAppointment = userAppointments.some(
-          (apt: any) =>
+          (apt: Appointment) =>
             apt.type === "trial" &&
             (apt.status === "scheduled" || apt.status === "completed"),
         );
@@ -1507,8 +1533,8 @@ export const appRouter = router({
       // Receita mensal (últimos 12 meses)
       const revenueByMonth: Record<string, number> = {};
       allPurchases
-        .filter((p: any) => p.status === "completed")
-        .forEach((p: any) => {
+        .filter((p: Purchase) => p.status === "completed")
+        .forEach((p: Purchase) => {
           const date = new Date(p.createdAt);
           const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
           revenueByMonth[monthKey] =

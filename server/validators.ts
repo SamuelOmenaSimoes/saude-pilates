@@ -1,9 +1,13 @@
 // Validação de CPF e Telefone no backend
+import { z } from 'zod';
 
 /**
  * Valida CPF (dígitos verificadores)
  */
 export function validateCPF(cpf: string): boolean {
+  // Validate input length
+  if (typeof cpf !== 'string' || cpf.length > 50) return false;
+  
   const numbers = cpf.replace(/\D/g, '');
   
   if (numbers.length !== 11) return false;
@@ -36,6 +40,9 @@ export function validateCPF(cpf: string): boolean {
  * Valida telefone brasileiro (10 ou 11 dígitos)
  */
 export function validatePhone(phone: string): boolean {
+  // Validate input length
+  if (typeof phone !== 'string' || phone.length > 30) return false;
+  
   const numbers = phone.replace(/\D/g, '');
   
   // Deve ter 10 (fixo) ou 11 (celular) dígitos
@@ -55,12 +62,55 @@ export function validatePhone(phone: string): boolean {
  * Remove máscara do CPF
  */
 export function unmaskCPF(value: string): string {
-  return value.replace(/\D/g, '');
+  if (typeof value !== 'string') return '';
+  return value.replace(/\D/g, '').substring(0, 11);
 }
 
 /**
  * Remove máscara do telefone
  */
 export function unmaskPhone(value: string): string {
-  return value.replace(/\D/g, '');
+  if (typeof value !== 'string') return '';
+  return value.replace(/\D/g, '').substring(0, 11);
 }
+
+// Zod schemas for strong validation
+
+/** Schema para validação rigorosa de email */
+export const emailSchema = z.string()
+  .trim()
+  .toLowerCase()
+  .email('Email inválido')
+  .max(255, 'Email muito longo');
+
+/** Schema para validação rigorosa de senha */
+export const passwordSchema = z.string()
+  .min(6, 'Senha deve ter pelo menos 6 caracteres')
+  .max(128, 'Senha não pode exceder 128 caracteres')
+  .regex(/[a-z]/, 'Senha deve conter letras minúsculas')
+  .regex(/[A-Z]/, 'Senha deve conter letras maiúsculas')
+  .regex(/[0-9]/, 'Senha deve conter números');
+
+/** Schema para validação de nome */
+export const nameSchema = z.string()
+  .trim()
+  .min(2, 'Nome deve ter pelo menos 2 caracteres')
+  .max(255, 'Nome muito longo')
+  .regex(/^[a-zA-Záàâãéèêíïóôõöúçñ\s'-]+$/i, 'Nome contém caracteres inválidos');
+
+/** Schema para validação de CPF */
+export const cpfSchema = z.string()
+  .refine((cpf) => validateCPF(cpf), 'CPF inválido');
+
+/** Schema para validação de telefone */
+export const phoneSchema = z.string()
+  .refine((phone) => validatePhone(phone), 'Telefone inválido');
+
+/** Schemas de input combinados */
+export const registerInputSchema = z.object({
+  email: emailSchema,
+  password: passwordSchema,
+  name: nameSchema,
+  cpf: cpfSchema,
+  phone: phoneSchema,
+});

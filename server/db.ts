@@ -1,6 +1,7 @@
 import {
   eq,
   and,
+  or,
   gte,
   lte,
   lt,
@@ -12,6 +13,7 @@ import {
   isNull,
   isNotNull,
   count,
+  like,
 } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
@@ -336,11 +338,19 @@ export async function searchUsers(searchTerm: string) {
   const db = await getDb();
   if (!db) return [];
 
+  // Sanitize search term (max length to prevent abuse)
+  const sanitized = searchTerm.trim().substring(0, 100);
+  if (!sanitized) return [];
+
   const result = await db
     .select()
     .from(users)
     .where(
-      sql`${users.name} LIKE ${`%${searchTerm}%`} OR ${users.email} LIKE ${`%${searchTerm}%`} OR ${users.cpf} LIKE ${`%${searchTerm}%`}`,
+      or(
+        like(users.name, `%${sanitized}%`),
+        like(users.email, `%${sanitized}%`),
+        like(users.cpf, `%${sanitized}%`),
+      ),
     )
     .limit(50);
 
