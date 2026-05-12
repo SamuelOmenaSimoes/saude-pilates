@@ -211,7 +211,7 @@ export default function BookClass() {
 
                 {selectedUnit && rooms && rooms.length > 0 && (
                   <div className="space-y-2">
-                    <Label>Sala / Profissional</Label>
+                    <Label>Sala / Doutora</Label>
                     <Select
                       onValueChange={(value) => {
                         setSelectedRoom(Number(value));
@@ -236,7 +236,7 @@ export default function BookClass() {
                 {professional && (
                   <div className="rounded-lg bg-muted p-4">
                     <p className="text-sm font-medium">
-                      Profissional: {professional.fullName}
+                      Doutora: {professional.fullName}
                     </p>
                   </div>
                 )}

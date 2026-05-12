@@ -2274,7 +2274,7 @@ export const appRouter = router({
         });
       }
 
-      const SINGLE_CLASS_PRICE = 6000; // R$ 60,00
+      const SINGLE_CLASS_PRICE = 9000; // R$ 90,00
 
       // Create pending purchase record
       const purchaseResult = await db.createPurchase({

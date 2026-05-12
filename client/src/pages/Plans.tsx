@@ -498,7 +498,7 @@ export default function Plans() {
 
                 <CardContent>
                   <div className="mb-6 text-center">
-                    <div className="mb-2 text-4xl font-bold">R$ 60,00</div>
+                    <div className="mb-2 text-4xl font-bold">R$ 90,00</div>
                     <p className="text-sm text-muted-foreground">
                       Por aula de 1 hora
                     </p>

@@ -67,7 +67,7 @@ export default function Home() {
               <Link href="/single-class">
                 <a>
                   <Button size="lg" variant="outline" className="w-full sm:w-auto text-lg border-primary text-primary hover:bg-primary hover:text-white">
-                    Aula Avulsa (R$ 60)
+                    Aula Avulsa (R$ 90)
                   </Button>
                 </a>
               </Link>

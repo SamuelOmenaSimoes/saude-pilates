@@ -15,7 +15,7 @@ export interface StripeProduct {
 export const SINGLE_CLASS_PRODUCT: StripeProduct = {
   name: "Aula Avulsa",
   description: "Aula avulsa de Pilates - 1 hora",
-  priceInCents: 6000, // R$ 60,00
+  priceInCents: 9000, // R$ 90,00
   credits: 1,
   metadata: {
     type: "single",

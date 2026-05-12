@@ -178,7 +178,7 @@ export default function SingleClass() {
           <div className="mx-auto max-w-3xl text-center">
             <h1 className="mb-4 text-4xl font-bold md:text-5xl">Aula Avulsa</h1>
             <p className="text-lg text-muted-foreground">
-              Compre uma aula avulsa por R$ 60,00 ou use seus créditos
+              Compre uma aula avulsa por R$ 90,00 ou use seus créditos
               disponíveis.
             </p>
             {isAuthenticated && creditBalance && (
@@ -231,7 +231,7 @@ export default function SingleClass() {
 
                 {selectedUnit && rooms && rooms.length > 0 && (
                   <div className="space-y-2">
-                    <Label>Sala / Profissional</Label>
+                    <Label>Sala / Doutora</Label>
                     <Select
                       onValueChange={(value) => {
                         setSelectedRoom(Number(value));
@@ -256,7 +256,7 @@ export default function SingleClass() {
                 {professional && (
                   <div className="rounded-lg bg-muted p-4">
                     <p className="text-sm font-medium">
-                      Profissional: {professional.fullName}
+                      Doutora: {professional.fullName}
                     </p>
                   </div>
                 )}
@@ -339,7 +339,7 @@ export default function SingleClass() {
                         <span className="text-lg font-bold">
                           Pagar com Cartão
                         </span>
-                        <span className="text-sm">R$ 60,00</span>
+                        <span className="text-sm">R$ 90,00</span>
                       </Button>
                     </div>
                   </div>
@@ -349,7 +349,7 @@ export default function SingleClass() {
                       <div className="flex items-center justify-between">
                         <span className="text-lg font-semibold">Total:</span>
                         <span className="text-2xl font-bold text-primary">
-                          R$ 60,00
+                          R$ 90,00
                         </span>
                       </div>
                     </div>
